@@ -12,8 +12,13 @@ on:
           - x64
           - arm64
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -99,7 +104,7 @@ jobs:
           npx tauri build
 
       # ============================================================
-      # Artifacts
+      # Artifacts (always upload for download from Actions page)
       # ============================================================
       - name: Upload MSI
         uses: actions/upload-artifact@v4
@@ -116,14 +121,26 @@ jobs:
           if-no-files-found: warn
 
       # ============================================================
-      # Release: auto-attach artifacts on tag push
+      # Release: publish to GitHub Releases
+      #   - push to main → rolling "latest" prerelease
+      #   - push tag v*  → stable release
       # ============================================================
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             tauri/src-tauri/target/**/bundle/msi/*.msi
             tauri/src-tauri/target/**/bundle/nsis/*.exe
-          draft: true
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('Release {0}', github.ref_name) || 'Latest Build' }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           generate_release_notes: true
+          body: |
+            ## HIFI Detector — Windows Build
+
+            ### Downloads
+            - **MSI installer** — standard Windows installer
+            - **NSIS installer** — alternative `.exe` installer
+
+            ### What's new
+            ${{ startsWith(github.ref, 'refs/tags/v') && 'Official release' || 'Latest build from main branch (pre-release)' }}

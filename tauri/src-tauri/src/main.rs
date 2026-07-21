@@ -112,7 +112,8 @@ fn find_python() -> (String, Vec<String>) {
 fn start_python_server(port: u16) -> Result<Child, String> {
     let (python, base_args) = find_python();
 
-    let child = Command::new(&python)
+    let mut command = Command::new(&python);
+    command
         .args(&base_args)
         .arg("--no-open")
         .arg("--port")
@@ -120,7 +121,17 @@ fn start_python_server(port: u16) -> Result<Child, String> {
         .arg("--host")
         .arg("127.0.0.1")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // On Windows, prevent a console window from flashing for the child process
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let child = command
         .spawn()
         .map_err(|e| format!("Failed to spawn Python server: {}", e))?;
 
