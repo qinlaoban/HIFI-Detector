@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HIFI Detector</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+:root {
+  --bg: #1a1a2e; --surface: #16213e; --surface2: #0f3460;
+  --text: #e0e0e0; --text-dim: #a0a0b0;
+  --accent: #533483; --accent2: #e94560;
+  --green: #00c853; --yellow: #ffd600; --red: #ff1744;
+  --border: #2a2a4a; --radius: 10px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--surface);border-bottom:1px solid var(--border)}
+.header h1{font-size:18px;font-weight:700;letter-spacing:2px}
+.header-right{display:flex;gap:10px;align-items:center}
+
+.lang-select{background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:var(--radius);cursor:pointer;font-size:13px;transition:.2s;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a0a0b0'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:26px;outline:none}
+.lang-select:hover{background-color:var(--accent)}
+.lang-select option{background:var(--surface);color:var(--text)}
+
+.btn{background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:8px 24px;border-radius:var(--radius);cursor:pointer;font-size:14px;transition:.2s}
+.btn:hover{background:var(--accent)}
+
+.container{max-width:960px;margin:0 auto;padding:0 24px}
+
+.upload-section{padding-top:40px;padding-bottom:20px}
+.dropzone{border:2px dashed var(--border);border-radius:var(--radius);padding:56px 24px;text-align:center;cursor:pointer;transition:.25s;background:var(--surface)}
+.dropzone.drag-over{border-color:var(--accent2);background:var(--surface2)}
+.dropzone .icon{font-size:42px;margin-bottom:10px}
+.dropzone .title{font-size:17px;font-weight:600;margin-bottom:4px}
+.dropzone .hint{font-size:12px;color:var(--text-dim)}
+.dropzone input{display:none}
+
+.progress{display:none;text-align:center;padding:32px}
+.progress.active{display:block}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent2);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress .msg{font-size:14px;color:var(--text-dim)}
+
+.results{display:none;padding-bottom:60px}
+.results.active{display:block}
+
+.verdict{padding:18px 24px;border-radius:var(--radius);margin:24px 0;font-size:20px;font-weight:700;text-align:center;letter-spacing:1px}
+.verdict.HIGH_QUALITY,.verdict.CLEAN{background:#1b5e20;color:#69f0ae;border:1px solid #2e7d32}
+.verdict.WARN{background:#4a3800;color:var(--yellow);border:1px solid #795d00}
+.verdict.ISSUES{background:#4a0000;color:var(--red);border:1px solid #7f0000}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden}
+.card-hdr{padding:12px 20px;background:var(--surface2);font-size:13px;font-weight:600;letter-spacing:1px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none}
+.card-hdr .arrow{transition:.2s;font-size:11px}
+.card-hdr.open .arrow{transform:rotate(90deg)}
+.card-body{padding:16px 20px;display:none}
+.card-body.show{display:block}
+
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.info-item .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.info-item .val{font-size:17px;font-weight:600}
+
+.metrics{display:flex;flex-direction:column;gap:10px}
+.metric-row{display:flex;align-items:center;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:6px;gap:12px}
+.metric-row .name{width:150px;font-size:13px;font-weight:600;flex-shrink:0}
+.metric-row .bar-wrap{flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.metric-row .bar-fill{height:100%;border-radius:4px;transition:.4s}
+.metric-row .bar-fill.green{background:var(--green)}
+.metric-row .bar-fill.yellow{background:var(--yellow)}
+.metric-row .bar-fill.red{background:var(--red)}
+.metric-row .bar-fill.dim{background:var(--accent)}
+.metric-row .status{width:90px;text-align:right;font-size:12px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+.metric-row .status.green{color:var(--green)}
+.metric-row .status.yellow{color:var(--yellow)}
+.metric-row .status.red{color:var(--red)}
+.metric-row .status.dim{color:var(--text-dim)}
+
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab-btn{background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);padding:8px 18px;border-radius:var(--radius) var(--radius) 0 0;cursor:pointer;font-size:13px;transition:.2s}
+.tab-btn.active{background:var(--surface);color:var(--text);border-bottom-color:transparent}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.chart-wrap{border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+
+.error-box{background:#4a0000;border:1px solid #7f0000;border-radius:var(--radius);padding:16px 20px;margin:24px 0;color:var(--red);font-size:13px}
+
+.audio-card{padding:0}
+.audio-card audio{width:100%;height:44px;display:block}
+.audio-card audio::-webkit-media-controls-panel{background:var(--surface)}
+.audio-card audio::-webkit-media-controls-current-time-display,
+.audio-card audio::-webkit-media-controls-time-remaining-display{color:var(--text)}
+.audio-card audio::-webkit-media-controls-play-button,
+.audio-card audio::-webkit-media-controls-mute-button{filter:invert(.85)}
+.audio-card audio::-webkit-media-controls-timeline{border-radius:2px}
+.audio-card audio::-webkit-media-controls-volume-slider{filter:invert(.85)}
+
+@media(max-width:640px){
+  .header{padding:12px 16px}
+  .header h1{font-size:15px}
+  .info-grid{grid-template-columns:repeat(2,1fr)}
+  .metric-row{flex-wrap:wrap}
+  .metric-row .name{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><h1>HIFI Detector</h1></div>
+  <div class="header-right">
+    <select class="lang-select" id="langSelect">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+      <option value="ja">日本語</option>
+    </select>
+  </div>
+</div>
+
+<div class="container" id="app">
+
+  <!-- Upload Zone -->
+  <div class="upload-section" id="uploadSection">
+    <div class="dropzone" id="dropzone">
+      <div class="icon">&#x1F3B5;</div>
+      <div class="title" data-i18n="dropTitle">Drop an audio file here</div>
+      <div class="hint" data-i18n="dropHint">or click to browse — FLAC, WAV, MP3, AIFF, OGG, M4A, APE</div>
+      <input type="file" id="fileInput" accept=".flac,.wav,.mp3,.aiff,.aif,.ogg,.opus,.m4a,.alac,.ape,.wv">
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress" id="progress">
+    <div class="spinner"></div>
+    <div class="msg" data-i18n="analyzing">Analyzing...</div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox" style="display:none"></div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+
+    <div style="text-align:center;margin-bottom:8px">
+      <button class="btn" onclick="resetToUpload()">&#x2190; <span data-i18n="analyzeAnother">Analyze Another File</span></button>
+    </div>
+
+    <div class="verdict" id="verdictBanner"></div>
+
+    <!-- Audio Playback -->
+    <div class="card audio-card" id="audioCard" style="display:none">
+      <audio id="audioPlayer" controls preload="auto"></audio>
+    </div>
+
+    <!-- Summary & Recommendation -->
+    <div class="card" id="summaryCard" style="border-color:var(--accent2)">
+      <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardSummary">SUMMARY &amp; RECOMMENDATION</div>
+      <div class="card-body show" id="cardSummary"></div>
+    </div>
+
+    <!-- Audio Info -->
+    <div class="card">
+      <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardInfo">AUDIO INFO</div>
+      <div class="card-body show" id="cardInfo"></div>
+    </div>
+
+    <!-- Quality Metrics -->
+    <div class="card">
+      <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardQuality">QUALITY ANALYSIS</div>
+      <div class="card-body show" id="cardQuality"></div>
+    </div>
+
+    <!-- Authenticity -->
+    <div class="card">
+      <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardAuth">AUTHENTICITY</div>
+      <div class="card-body show" id="cardAuth"></div>
+    </div>
+
+    <!-- Vis Tabs -->
+    <div class="card">
+      <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardVis">VISUALIZATION</div>
+      <div class="card-body show" id="cardVis">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('spectrogram')" data-i18n="tabSpec">Spectrogram</button>
+          <button class="tab-btn" onclick="switchTab('waveform')" data-i18n="tabWave">Waveform</button>
+        </div>
+        <div class="tab-content active" id="tab-spectrogram">
+          <div class="chart-wrap" id="specChart"></div>
+        </div>
+        <div class="tab-content" id="tab-waveform">
+          <div class="chart-wrap" id="waveChart"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== I18N ======
+const I18N = {
+  en: {
+    dropTitle: "Drop an audio file here",
+    dropHint: "or click to browse — FLAC, WAV, MP3, AIFF, OGG, M4A, APE",
+    analyzing: "Analyzing...",
+    cardInfo: "AUDIO INFO",
+    cardSummary: "SUMMARY & RECOMMENDATION",
+    cardQuality: "QUALITY ANALYSIS",
+    cardAuth: "AUTHENTICITY",
+    cardVis: "VISUALIZATION",
+    tabSpec: "Spectrogram",
+    tabWave: "Waveform",
+    quality: "Quality",
+    format: "Format",
+    subtype: "Subtype",
+    sampleRate: "Sample Rate",
+    bitDepth: "Bit Depth",
+    channels: "Channels",
+    duration: "Duration",
+    fileSize: "File Size",
+    bitrate: "Bitrate",
+    clipping: "Clipping",
+    dcOffset: "DC Offset",
+    chanBalance: "Channel Balance",
+    truePeak: "True Peak",
+    dynamicRange: "Dynamic Range",
+    rmsLevel: "RMS Level",
+    integratedLUFS: "Integrated LUFS",
+    loudnessRange: "Loudness Range",
+    bitDepthAuth: "Bit Depth Auth",
+    spectralCutoff: "Spectral Cutoff",
+    upsampling: "Upsampling",
+    bit24Auth: "24-bit Authenticity",
+    suspicion: "Suspicion",
+    clean: "CLEAN",
+    ok: "OK",
+    warn: "WARN",
+    suspect: "SUSPECT",
+    issue: "ISSUE",
+    highQuality: "HIGH QUALITY",
+    issuesDetected: "ISSUES DETECTED",
+    minorIssues: "MINOR ISSUES",
+    notDetected: "Not detected",
+    noneDetected: "None detected",
+    yes: "Yes",
+    no: "No",
+    kHz: "kHz",
+    bit: "bit",
+    ch: "ch",
+    MB: "MB",
+    kbps: "kbps",
+    dB: "dB",
+    dBTP: "dBTP",
+    dBFS: "dBFS",
+    LUFS: "LUFS",
+    LU: "LU",
+    Hz: "Hz",
+    samples: "samples",
+    unknown: "Unknown",
+    freq: "Frequency (Hz)",
+    time: "Time (s)",
+    amp: "Amplitude",
+    mag: "Magnitude (dB)",
+    bad: "Bad",
+    transition: "Transition",
+    good: "Good",
+    excellent: "Excellent",
+    boundaryRisk: "Boundary risk",
+    analyzeAnother: "Analyze Another File",
+    // Summary
+    summaryVerdictKeep: "Safe to keep — this is a high-quality audio file.",
+    summaryVerdictOk: "Safe to keep — no significant issues detected.",
+    summaryVerdictWarn: "Can keep, but has minor issues.",
+    summaryVerdictIssue: "Be cautious — suspicious issues detected.",
+    summaryTipPeak: "The overall level is too high, close to clipping. May sound harsh or distorted. If it sounds unpleasant, try a different version.",
+    summaryTipClip: "Hard clipping detected. The waveform has been cut off — this causes audible distortion and cannot be recovered.",
+    summaryTipDC: "DC offset detected. This is usually a recording or transfer artifact and can be fixed with a high-pass filter.",
+    summaryTipBalance: "Channel imbalance. Left and right channels have significantly different levels.",
+    summaryTipDR: "Dynamic range is low. This usually means heavy compression was applied, making the music sound flat and lifeless.",
+    summaryTipUpsample: "This file appears to be upsampled from a lower sample rate. It's not a real hi-res recording — just a CD-quality file that was stretched to a higher resolution.",
+    summaryTipCutoff: "Sharp frequency cutoff detected. This suggests the audio came from a lossy source (e.g. MP3) and was converted to a lossless format.",
+    summaryTipBitFake: "Lower bits are not active. The file claims to be 24/32-bit but may have been padded from a 16-bit source.",
+    summaryTipClean: "All checks passed. No quality or authenticity issues found.",
+    summaryDetail: "Details",
+    summaryWhatNow: "What does this mean?",
+    summarySuggestion: "Suggestion",
+    summarySuggestionFake: "This file may not be genuine hi-res. If you paid for it or it claims to be hi-res, consider finding a verified source.",
+    summarySuggestionClip: "Clipping distortion is permanent. The only fix is to find a version that was not clipped during mastering.",
+    summarySuggestionOther: "These issues are usually from mastering choices, not from a fake source. It's still real hi-res, just processed differently.",
+  },
+  zh: {
+    dropTitle: "拖拽音频文件到此处",
+    dropHint: "或点击选择 — 支持 FLAC, WAV, MP3, AIFF, OGG, M4A, APE",
+    analyzing: "分析中...",
+    cardInfo: "音频信息",
+    cardSummary: "总结与建议",
+    cardQuality: "质量分析",
+    cardAuth: "真伪检测",
+    cardVis: "可视化",
+    tabSpec: "频谱图",
+    tabWave: "波形图",
+    quality: "质量",
+    format: "格式",
+    subtype: "编码",
+    sampleRate: "采样率",
+    bitDepth: "位深",
+    channels: "声道",
+    duration: "时长",
+    fileSize: "文件大小",
+    bitrate: "码率",
+    clipping: "削波",
+    dcOffset: "直流偏移",
+    chanBalance: "声道平衡",
+    truePeak: "真峰值",
+    dynamicRange: "动态范围",
+    rmsLevel: "RMS 电平",
+    integratedLUFS: "综合响度",
+    loudnessRange: "响度范围",
+    bitDepthAuth: "位深验证",
+    spectralCutoff: "频谱截止",
+    upsampling: "升采样",
+    bit24Auth: "24-bit 真伪",
+    suspicion: "嫌疑标记",
+    clean: "无问题",
+    ok: "正常",
+    warn: "警告",
+    suspect: "可疑",
+    issue: "问题",
+    highQuality: "高质量",
+    issuesDetected: "检测到问题",
+    minorIssues: "轻微问题",
+    notDetected: "未检测到",
+    noneDetected: "未发现",
+    yes: "是",
+    no: "否",
+    kHz: "kHz",
+    bit: "bit",
+    ch: "声道",
+    MB: "MB",
+    kbps: "kbps",
+    dB: "dB",
+    dBTP: "dBTP",
+    dBFS: "dBFS",
+    LUFS: "LUFS",
+    LU: "LU",
+    Hz: "Hz",
+    samples: "采样点",
+    unknown: "未知",
+    freq: "频率 (Hz)",
+    time: "时间 (s)",
+    amp: "振幅",
+    mag: "幅度 (dB)",
+    bad: "差",
+    transition: "过渡",
+    good: "良好",
+    excellent: "优秀",
+    boundaryRisk: "边界风险",
+    analyzeAnother: "再分析一个",
+    // Summary
+    summaryVerdictKeep: "推荐保留 — 这是一份高质量音频文件。",
+    summaryVerdictOk: "可以保留 — 各项指标正常，未检测到问题。",
+    summaryVerdictWarn: "可以保留，但有一些小瑕疵。",
+    summaryVerdictIssue: "建议谨慎 — 检测到可疑问题。",
+    summaryTipPeak: "整体电平过高，接近削波上限，可能导致听感刺耳或失真。如果听起来不舒服，建议找其他版本。",
+    summaryTipClip: "检测到硬削波失真。波形被削平了——这会导致可闻失真且无法修复。",
+    summaryTipDC: "存在直流偏移。通常是录音或转录过程中引入的，可以用高通滤波器修复。",
+    summaryTipBalance: "左右声道电平差异较大，声道不平衡。",
+    summaryTipDR: "动态范围偏低。通常意味着经过较强压缩处理，音乐听起来会平淡、缺乏层次感。",
+    summaryTipUpsample: "疑似从更低采样率拉伸而来。这不是真正的 Hi-Res 录音，只是把 CD 音质的文件拉大了分辨率。",
+    summaryTipCutoff: "检测到频谱被截断。可能源自有损压缩格式（如 MP3），然后被转成了无损格式。",
+    summaryTipBitFake: "低位未被使用。文件声称是 24/32-bit，但可能从 16-bit 音源填充而来。",
+    summaryTipClean: "所有检测项通过，未发现任何质量或真伪问题。",
+    summaryDetail: "具体问题",
+    summaryWhatNow: "这意味着什么？",
+    summarySuggestion: "建议",
+    summarySuggestionFake: "这份文件可能不是真正的 Hi-Res。如果你是付费购买的或它声称是 Hi-Res 的，建议找可信来源验证。",
+    summarySuggestionClip: "削波失真是永久性的。唯一的解决办法是找一个没有被削波的版本。",
+    summarySuggestionOther: "这些问题通常来自母带处理而非伪造。文件本身是真实的，只是处理方式不同。",
+  },
+  ja: {
+    dropTitle: "音声ファイルをドロップ",
+    dropHint: "またはクリックして選択 — FLAC, WAV, MP3, AIFF, OGG, M4A, APE",
+    analyzing: "分析中...",
+    cardInfo: "音声情報",
+    cardSummary: "概要と推奨",
+    cardQuality: "品質分析",
+    cardAuth: "真正性検証",
+    cardVis: "可視化",
+    tabSpec: "スペクトログラム",
+    tabWave: "波形",
+    quality: "品質",
+    format: "フォーマット",
+    subtype: "コーデック",
+    sampleRate: "サンプルレート",
+    bitDepth: "ビット深度",
+    channels: "チャンネル",
+    duration: "長さ",
+    fileSize: "ファイルサイズ",
+    bitrate: "ビットレート",
+    clipping: "クリッピング",
+    dcOffset: "DCオフセット",
+    chanBalance: "チャンネルバランス",
+    truePeak: "トゥルーピーク",
+    dynamicRange: "ダイナミックレンジ",
+    rmsLevel: "RMSレベル",
+    integratedLUFS: "統合ラウドネス",
+    loudnessRange: "ラウドネスレンジ",
+    bitDepthAuth: "ビット深度検証",
+    spectralCutoff: "スペクトルカットオフ",
+    upsampling: "アップサンプリング",
+    bit24Auth: "24-bit検証",
+    suspicion: "疑わしさ",
+    clean: "問題なし",
+    ok: "正常",
+    warn: "警告",
+    suspect: "疑わしい",
+    issue: "問題",
+    highQuality: "高品質",
+    issuesDetected: "問題検出",
+    minorIssues: "軽微な問題",
+    notDetected: "未検出",
+    noneDetected: "検出なし",
+    yes: "はい",
+    no: "いいえ",
+    kHz: "kHz",
+    bit: "bit",
+    ch: "ch",
+    MB: "MB",
+    kbps: "kbps",
+    dB: "dB",
+    dBTP: "dBTP",
+    dBFS: "dBFS",
+    LUFS: "LUFS",
+    LU: "LU",
+    Hz: "Hz",
+    samples: "サンプル",
+    unknown: "不明",
+    freq: "周波数 (Hz)",
+    time: "時間 (s)",
+    amp: "振幅",
+    mag: "振幅 (dB)",
+    bad: "悪い",
+    transition: "中間",
+    good: "良好",
+    excellent: "優秀",
+    boundaryRisk: "境界リスク",
+    analyzeAnother: "別のファイルを分析",
+    // Summary
+    summaryVerdictKeep: "保存推奨 — 高品質な音声ファイルです。",
+    summaryVerdictOk: "保存して問題ありません — 重大な問題は検出されませんでした。",
+    summaryVerdictWarn: "保存できますが、軽微な問題があります。",
+    summaryVerdictIssue: "注意が必要 — 疑わしい問題が検出されました。",
+    summaryTipPeak: "全体のレベルが高すぎ、クリッピングに近い状態です。耳障りに聞こえる可能性があります。不快に感じる場合は別のバージョンを探してください。",
+    summaryTipClip: "ハードクリッピングが検出されました。波形が切り取られており、可聴な歪みが発生しています。これは修復不可能です。",
+    summaryTipDC: "DCオフセットが検出されました。通常は録音または転送時のアーティファクトで、ハイパスフィルターで修正可能です。",
+    summaryTipBalance: "左右チャンネルのレベルに大きな差があります。",
+    summaryTipDR: "ダイナミックレンジが低いです。強いコンプレッションが適用されており、音楽が平坦で生気なく聞こえます。",
+    summaryTipUpsample: "このファイルは低いサンプルレートからアップサンプリングされた可能性があります。真のハイレゾ録音ではなく、CD品質のファイルを拡大したものです。",
+    summaryTipCutoff: "周波数スペクトルが急激にカットオフされています。これは非可逆圧縮（MP3など）から変換された可能性を示します。",
+    summaryTipBitFake: "下位ビットが使用されていません。ファイルは24/32-bitと表示されていますが、16-bitソースからパディングされた可能性があります。",
+    summaryTipClean: "すべてのチェックに合格しました。品質や真正性の問題は見つかりませんでした。",
+    summaryDetail: "詳細",
+    summaryWhatNow: "これはどういう意味？",
+    summarySuggestion: "推奨",
+    summarySuggestionFake: "このファイルは真のハイレゾではない可能性があります。有料で購入した場合やハイレゾと主張されている場合は、信頼できるソースを確認してください。",
+    summarySuggestionClip: "クリッピング歪みは永久的です。唯一の解決策は、マスタリング時にクリッピングされていないバージョンを見つけることです。",
+    summarySuggestionOther: "これらの問題は通常、偽造ではなくマスタリングの選択によるものです。ファイル自体は本物で、処理方法が異なるだけです。",
+  }
+};
+
+let lang = 'en';
+let fileId = null;
+let currentData = null;
+let currentFile = null;
+
+function t(key) { return I18N[lang][key] || key; }
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes < 0) return '0 MB';
+  // Windows uses binary (GiB labeled as GB); macOS/Linux/iOS/Android use decimal
+  const isWindows = /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent);
+  const div = isWindows ? 1024 * 1024 : 1000 * 1000;
+  const label = t('MB');
+  if (bytes >= 1000 * 1000 * 1000) {
+    const gb = isWindows ? 1024 * 1024 * 1024 : 1000 * 1000 * 1000;
+    return (bytes / gb).toFixed(2) + ' GB';
+  }
+  return (bytes / div).toFixed(1) + ' ' + label;
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('hifi-lang', l);
+  document.getElementById('langSelect').value = l;
+  document.documentElement.lang = l;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  if (currentData) renderResults(currentData);
+}
+
+// Load saved language preference, default to 'en'
+lang = localStorage.getItem('hifi-lang') || 'en';
+
+// Apply language on load
+document.getElementById('langSelect').value = lang;
+document.documentElement.lang = lang;
+document.querySelectorAll('[data-i18n]').forEach(el => {
+  el.textContent = t(el.dataset.i18n);
+});
+
+// Save preference on change
+document.getElementById('langSelect').addEventListener('change', function() {
+  setLang(this.value);
+});
+
+// ====== UPLOAD ======
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const allowed = ['flac','wav','mp3','aiff','aif','ogg','opus','m4a','alac','ape','wv'];
+  if (!allowed.includes(ext)) {
+    showError('Unsupported format: .' + ext + ' / 不支持的格式');
+    return;
+  }
+
+  // Save file for playback
+  currentFile = file;
+
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('progress').classList.add('active');
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const resp = await fetch('/api/analyze', { method: 'POST', body: form });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'Analysis failed');
+    }
+    const data = await resp.json();
+    fileId = data.file_id;
+    currentData = data;
+    // Set up audio playback
+    if (currentFile) {
+      const audio = document.getElementById('audioPlayer');
+      audio.src = URL.createObjectURL(currentFile);
+      document.getElementById('audioCard').style.display = '';
+    }
+    document.getElementById('progress').classList.remove('active');
+    renderResults(data);
+    document.getElementById('results').classList.add('active');
+  } catch (e) {
+    document.getElementById('progress').classList.remove('active');
+    document.getElementById('uploadSection').style.display = '';
+    showError(e.message);
+  }
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+
+// ====== SUMMARY ======
+function renderSummary(d) {
+  const q = d.quality;
+  const l = d.loudness;
+  const dr = d.dynamic_range;
+  const a = d.authenticity;
+  const m = d.metadata;
+  const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+
+  // Collect issues
+  const issues = [];
+  if (tpMax > -1) issues.push('peak');
+  if (q.clipping.samples > 0) issues.push('clip');
+  if (q.dc_offset_pct > 0.1) issues.push('dc');
+  if (q.channel_balance_db > 1) issues.push('balance');
+  if (dr.dr_official < 10) issues.push('dr');
+  if (a.is_suspected_upsampled) issues.push('upsample');
+  if (a.has_sharp_cutoff) issues.push('cutoff');
+  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
+
+  // Verdict sentence
+  let verdictKey;
+  if (d.verdict === 'HIGH_QUALITY') verdictKey = 'summaryVerdictKeep';
+  else if (d.verdict === 'CLEAN') verdictKey = 'summaryVerdictOk';
+  else if (d.verdict === 'WARN') verdictKey = 'summaryVerdictWarn';
+  else verdictKey = 'summaryVerdictIssue';
+
+  let html = '<div style="font-size:16px;font-weight:700;margin-bottom:14px;color:var(--accent2)">' + t(verdictKey) + '</div>';
+
+  if (issues.length === 0) {
+    html += '<div style="padding:10px 0;color:var(--green);font-size:14px">' + t('summaryTipClean') + '</div>';
+  } else {
+    const tipMap = {
+      peak: 'summaryTipPeak', clip: 'summaryTipClip', dc: 'summaryTipDC',
+      balance: 'summaryTipBalance', dr: 'summaryTipDR', upsample: 'summaryTipUpsample',
+      cutoff: 'summaryTipCutoff', bitfake: 'summaryTipBitFake'
+    };
+
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:8px">' + t('summaryDetail') + ':</div>';
+    html += '<ul style="margin:0;padding:0 0 0 18px;line-height:1.8">';
+    for (const issue of issues) {
+      html += '<li style="margin-bottom:6px;font-size:13px;color:var(--text)">' + t(tipMap[issue]) + '</li>';
+    }
+    html += '</ul>';
+
+    // Simple suggestion
+    html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(233,69,96,0.08);border-radius:6px;font-size:12px;color:var(--text-dim)">';
+    html += '<strong style="color:var(--accent2)">' + t('summarySuggestion') + ':</strong> ';
+    if (issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake')) {
+      html += t('summarySuggestionFake');
+    } else if (issues.includes('clip')) {
+      html += t('summarySuggestionClip');
+    } else {
+      html += t('summarySuggestionOther');
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('cardSummary').innerHTML = html;
+}
+
+// ====== RENDER ======
+function renderResults(d) {
+  // Verdict banner
+  const verdictMap = {
+    HIGH_QUALITY: [t('highQuality'), 'HIGH_QUALITY'],
+    CLEAN: [t('clean'), 'CLEAN'],
+    WARN: [t('minorIssues'), 'WARN'],
+    ISSUES: [t('issuesDetected'), 'ISSUES'],
+  };
+  const [vText, vClass] = verdictMap[d.verdict] || [d.verdict, 'ISSUES'];
+  const vb = document.getElementById('verdictBanner');
+  vb.textContent = vText;
+  vb.className = 'verdict ' + vClass;
+
+  // Summary & Recommendation
+  renderSummary(d);
+
+  // Audio Info
+  const m = d.metadata;
+  const infoItems = [
+    [t('format'), m.format],
+    [t('subtype'), m.subtype],
+    [t('sampleRate'), (m.sample_rate/1000).toFixed(1) + ' ' + t('kHz')],
+    [t('bitDepth'), m.bit_depth + ' ' + t('bit')],
+    [t('channels'), m.channels + ' ' + t('ch')],
+    [t('duration'), fmtDuration(m.duration_s)],
+    [t('fileSize'), formatFileSize(m.file_size_bytes)],
+    [t('bitrate'), m.bitrate_kbps ? m.bitrate_kbps + ' ' + t('kbps') : 'N/A'],
+  ];
+  document.getElementById('cardInfo').innerHTML = '<div class="info-grid">' +
+    infoItems.map(([l,v]) => '<div class="info-item"><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>').join('') +
+    '</div>';
+
+  // Quality
+  const q = d.quality;
+  const l = d.loudness;
+  const dr = d.dynamic_range;
+  const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+
+  const clipV = q.clipping.samples > 0 ? [t('issue'), 'red', q.clipping.ratio_pct] : [t('clean'), 'green', 0];
+  const dcV = q.dc_offset_pct > 0.1 ? [t('warn'), 'yellow', q.dc_offset_pct] : [t('clean'), 'green', q.dc_offset_pct];
+  const balV = q.channel_balance_db > 1 ? [t('warn'), 'yellow', q.channel_balance_db] : [t('ok'), 'green', q.channel_balance_db];
+  const tpV = tpMax > -0.1 ? [t('issue'), 'red', tpMax] : tpMax > -1 ? [t('warn'), 'yellow', tpMax] : [t('ok'), 'green', tpMax];
+  const drV = dr.dr_official >= 14 ? [t('excellent'), 'green', dr.dr_official] :
+              dr.dr_official >= 10 ? [t('good'), 'green', dr.dr_official] :
+              dr.dr_official >= 8 ? [t('transition'), 'yellow', dr.dr_official] : [t('bad'), 'red', dr.dr_official];
+  const bdV = q.bit_depth_suspicious ? [t('suspect'), 'yellow', q.effective_bits] : [t('ok'), 'green', m.bit_depth];
+
+  const qMetrics = [
+    [t('clipping'), clipV, `max:0.01`],
+    [t('dcOffset'), dcV, `max:0.5`],
+    [t('chanBalance'), balV, `max:3`],
+    [t('truePeak'), tpV, `range:-6,0`],
+    [t('dynamicRange'), drV, `range:0,20`],
+    [t('rmsLevel'), ['', 'dim', 0], ''],
+    [t('integratedLUFS'), ['', 'dim', 0], ''],
+    [t('loudnessRange'), ['', 'dim', 0], ''],
+    [t('bitDepthAuth'), bdV, ''],
+  ];
+
+  let qHtml = '<div class="metrics">';
+  for (const [name, [verdict, color, val], range] of qMetrics) {
+    let barPct = 0;
+    if (range === 'max:0.01') barPct = Math.min(100, (val||0) / 0.01 * 100);
+    else if (range === 'max:0.5') barPct = Math.min(100, (val||0) / 0.5 * 100);
+    else if (range === 'max:3') barPct = Math.min(100, (val||0) / 3 * 100);
+    else if (range === 'range:-6,0') barPct = Math.min(100, Math.max(0, (val+6)/6*100));
+    else if (range === 'range:0,20') barPct = Math.min(100, (val||0)/20*100);
+
+    const vShow = verdict === '' ? '' : verdict;
+    qHtml += '<div class="metric-row">' +
+      '<span class="name">'+name+'</span>' +
+      '<div class="bar-wrap"><div class="bar-fill '+color+'" style="width:'+barPct+'%"></div></div>' +
+      '<span class="status '+color+'">'+vShow+'</span>' +
+      '</div>';
+  }
+  // RMS/LUFS/LRA values
+  qHtml = qHtml.replace('</span></div></div>', '</span></div>');
+  // Fill RMS
+  qHtml = qHtml.replace('>INFO<', '>'+l.rms_l_dbfs.toFixed(1)+' '+t('dBFS')+'<');
+  // Fill LUFS
+  qHtml = qHtml.replace('>INFO<', '>'+l.integrated_lufs.toFixed(1)+' '+t('LUFS')+'<');
+  // Fill LRA
+  qHtml = qHtml.replace('>INFO<', '>'+l.loudness_range_lu.toFixed(1)+' '+t('LU')+'<');
+
+  // Bit depth value
+  if (q.bit_depth_suspicious) {
+    qHtml = qHtml.replace('>SUSPECT<', '>'+t('suspect')+' ('+m.bit_depth+'→'+q.effective_bits+')<');
+  }
+
+  // Clipping value
+  if (q.clipping.samples > 0) {
+    qHtml = qHtml.replace('>ISSUE<', '>'+q.clipping.samples+' '+t('samples')+'<');
+  }
+
+  // TP value
+  const tpVal = tpMax.toFixed(2) + ' ' + t('dBTP');
+  const tpIdx = qHtml.indexOf(t('truePeak'));
+  const tpEnd = qHtml.indexOf('</div>', qHtml.indexOf('status', tpIdx));
+  qHtml = qHtml.substring(0, tpEnd) + tpVal + qHtml.substring(qHtml.indexOf('</span>', tpEnd));
+
+  document.getElementById('cardQuality').innerHTML = qHtml;
+
+  // Authenticity
+  const a = d.authenticity;
+  const cfV = a.has_sharp_cutoff ? [t('suspect'), 'red'] : [t('noneDetected'), 'green'];
+  const upV = a.is_suspected_upsampled ? [t('suspect'), 'red'] : [t('notDetected'), 'green'];
+  const b24V = (!a.low_bits_active && m.bit_depth >= 24) ? [t('suspect'), 'yellow'] : [t('ok'), 'green'];
+  const suspV = a.is_suspicious ? [t('yes')+' ('+Math.round(a.overall_confidence*100)+'%)', 'red'] : [t('no'), 'green'];
+
+  let cfDetail = cfV[0];
+  if (a.has_sharp_cutoff) {
+    cfDetail = (a.cutoff_freq_hz||0).toFixed(0) + ' ' + t('Hz') + ' (' + (a.cutoff_suspected_codec || t('unknown')) + ')';
+  }
+  let upDetail = upV[0];
+  if (a.is_suspected_upsampled) {
+    upDetail = '~' + (a.upsample_source_rate_hint||0) + ' ' + t('Hz') + ' source';
+  }
+
+  const aMetrics = [
+    [t('spectralCutoff'), cfDetail, cfV[1]],
+    [t('upsampling'), upDetail, upV[1]],
+    [t('bit24Auth'), b24V[0], b24V[1]],
+    [t('suspicion'), suspV[0], suspV[1]],
+  ];
+  if (a.suspicion_reasons && a.suspicion_reasons.length) {
+    aMetrics.push(['Reasons', a.suspicion_reasons.join('; '), 'red']);
+  }
+
+  document.getElementById('cardAuth').innerHTML = '<div class="metrics">' +
+    aMetrics.map(([n,v,c]) => '<div class="metric-row"><span class="name">'+n+'</span><span style="flex:1;font-size:13px;color:var(--text-dim)"></span><span class="status '+c+'">'+v+'</span></div>').join('') +
+    '</div>';
+
+  // Fetch spectrogram
+  loadSpectrogram();
+}
+
+function fmtDuration(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+}
+
+// ====== VISUALIZATION ======
+async function loadSpectrogram() {
+  if (!fileId) return;
+  try {
+    const resp = await fetch('/api/spectrogram/' + fileId);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    const trace = {
+      z: data.magnitudes_db,
+      x: data.times,
+      y: data.freqs,
+      type: 'heatmap',
+      colorscale: [
+        [0, '#1a1a2e'],
+        [0.2, '#0f3460'],
+        [0.4, '#533483'],
+        [0.6, '#e94560'],
+        [0.8, '#ffd600'],
+        [1, '#ffffff'],
+      ],
+      zmin: -120,
+      zmax: 0,
+      colorbar: { title: { text: t('mag'), font: { color: '#e0e0e0', size: 11 } }, tickfont: { color: '#a0a0b0', size: 10 } },
+    };
+    const layout = {
+      xaxis: { title: t('time'), color: '#e0e0e0', gridcolor: '#2a2a4a', zeroline: false },
+      yaxis: { title: t('freq'), type: 'log', color: '#e0e0e0', gridcolor: '#2a2a4a', zeroline: false,
+        tickformat: ',d', dtick: 1, range: [Math.log10(Math.max(20, data.freqs[1])), Math.log10(data.max_freq)] },
+      paper_bgcolor: '#16213e',
+      plot_bgcolor: '#1a1a2e',
+      font: { color: '#e0e0e0' },
+      margin: { l: 60, r: 30, t: 10, b: 50 },
+      height: 400,
+    };
+    Plotly.newPlot('specChart', [trace], layout, { responsive: true, displayModeBar: false });
+  } catch(e) { console.error('Spectrogram error:', e); }
+}
+
+async function loadWaveform() {
+  if (!fileId) return;
+  try {
+    const resp = await fetch('/api/waveform/' + fileId);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    const trace = {
+      x: data.times,
+      y: data.samples,
+      type: 'scatter',
+      mode: 'lines',
+      line: { color: '#e94560', width: 1 },
+      fill: 'tozeroy',
+      fillcolor: 'rgba(233,69,96,0.15)',
+    };
+    const layout = {
+      xaxis: { title: t('time'), color: '#e0e0e0', gridcolor: '#2a2a4a', zeroline: true, zerolinecolor: '#2a2a4a' },
+      yaxis: { title: t('amp'), color: '#e0e0e0', gridcolor: '#2a2a4a', zeroline: true, zerolinecolor: '#2a2a4a', range: [-1, 1] },
+      paper_bgcolor: '#16213e',
+      plot_bgcolor: '#1a1a2e',
+      font: { color: '#e0e0e0' },
+      margin: { l: 50, r: 20, t: 10, b: 50 },
+      height: 250,
+    };
+    Plotly.newPlot('waveChart', [trace], layout, { responsive: true, displayModeBar: false });
+  } catch(e) { console.error('Waveform error:', e); }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.i18n === 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1)) b.classList.add('active');
+  });
+  // Fallback
+  if (!document.querySelector('.tab-btn.active')) {
+    document.querySelector('.tab-btn:first-child').classList.add('active');
+  }
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'spectrogram') loadSpectrogram();
+  if (tab === 'waveform') loadWaveform();
+}
+
+function resetToUpload() {
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('uploadSection').style.display = '';
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('audioCard').style.display = 'none';
+  fileInput.value = '';
+  fileId = null;
+  currentData = null;
+  // Revoke audio blob URL to free memory
+  if (currentFile) {
+    const audio = document.getElementById('audioPlayer');
+    if (audio.src) URL.revokeObjectURL(audio.src);
+    audio.src = '';
+    currentFile = null;
+  }
+  // Clean up Plotly to avoid resize issues
+  Plotly.purge('specChart');
+  Plotly.purge('waveChart');
+}
+
+function toggleCard(hdr) {
+  hdr.classList.toggle('open');
+  hdr.nextElementSibling.classList.toggle('show');
+}
+</script>
+</body>
+</html>

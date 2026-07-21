@@ -1,0 +1,150 @@
+name: Build Windows MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture'
+        required: false
+        default: 'x64'
+        type: choice
+        options:
+          - x64
+          - arm64
+          - x64,arm64
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-msix:
+    runs-on: windows-latest
+    name: Build Windows MSIX (${{ github.event.inputs.arch || 'x64' }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # Python: build PyInstaller sidecar
+      # ============================================================
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\pip install -e ".[web]"
+          .venv\Scripts\pip install pyinstaller
+
+      - name: Build Python sidecar (PyInstaller)
+        shell: pwsh
+        run: |
+          .venv\Scripts\python -m PyInstaller `
+            --distpath tauri\dist-python `
+            --workpath tauri\build-python `
+            --noconfirm `
+            tauri\hifi-detect.spec
+
+          if (-not (Test-Path tauri\src-tauri\python)) {
+            New-Item -ItemType Directory -Path tauri\src-tauri\python -Force
+          }
+          Copy-Item -Force tauri\dist-python\hifi-detect-server\hifi-detect-server.exe tauri\src-tauri\python\
+          Copy-Item -Recurse -Force tauri\dist-python\hifi-detect-server\_internal tauri\src-tauri\python\_internal
+
+          Write-Host "Python sidecar ready:"
+          Get-ChildItem tauri\src-tauri\python -Recurse | Measure-Object | Select-Object -ExpandProperty Count
+          Write-Host "files copied"
+
+      # ============================================================
+      # Rust: compile Tauri binary
+      # ============================================================
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'tauri/src-tauri -> target'
+
+      # ============================================================
+      # Node: install Tauri CLI
+      # ============================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: tauri/package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          cd tauri
+          npm install
+
+      # ============================================================
+      # Build: Tauri (MSI + NSIS + AppX/MSIX)
+      # ============================================================
+      - name: Build Tauri Windows
+        shell: pwsh
+        run: |
+          cd tauri
+          $arch = "${{ github.event.inputs.arch || 'x64' }}"
+          if ($arch -eq 'x64') {
+            npx tauri build --target x86_64-pc-windows-msvc
+          } elseif ($arch -eq 'arm64') {
+            npx tauri build --target aarch64-pc-windows-msvc
+          } else {
+            npx tauri build --target x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          }
+
+      # ============================================================
+      # Artifacts
+      # ============================================================
+      - name: Upload MSIX/AppX
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-appx
+          path: |
+            tauri/src-tauri/target/**/bundle/appx/**/*.msix
+            tauri/src-tauri/target/**/bundle/appx/**/*.appx
+            tauri/src-tauri/target/**/bundle/appx/**/*.msixbundle
+            tauri/src-tauri/target/**/bundle/appx/**/*.appxbundle
+          if-no-files-found: ignore
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-installer
+          path: tauri/src-tauri/target/**/bundle/msi/*.msi
+          if-no-files-found: ignore
+
+      - name: Upload NSIS
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsis-installer
+          path: tauri/src-tauri/target/**/bundle/nsis/*.exe
+          if-no-files-found: ignore
+
+      # ============================================================
+      # Release: auto-attach artifacts on tag push
+      # ============================================================
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            tauri/src-tauri/target/**/bundle/appx/**/*.msix
+            tauri/src-tauri/target/**/bundle/appx/**/*.appx
+            tauri/src-tauri/target/**/bundle/appx/**/*.msixbundle
+            tauri/src-tauri/target/**/bundle/appx/**/*.appxbundle
+            tauri/src-tauri/target/**/bundle/msi/*.msi
+            tauri/src-tauri/target/**/bundle/nsis/*.exe
+          draft: true
+          generate_release_notes: true

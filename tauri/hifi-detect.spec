@@ -1,0 +1,67 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+a = Analysis(
+    ['../web_entry.py'],
+    pathex=['..'],
+    binaries=[],
+    datas=[
+        ('../hifi_detector/web/static', 'hifi_detector/web/static'),
+    ],
+    hiddenimports=[
+        'hifi_detector',
+        'hifi_detector.cli',
+        'hifi_detector.core',
+        'hifi_detector.core.audio_io',
+        'hifi_detector.core.metadata',
+        'hifi_detector.core.quality',
+        'hifi_detector.core.loudness',
+        'hifi_detector.core.dynamic_range',
+        'hifi_detector.core.authenticity',
+        'hifi_detector.web',
+        'hifi_detector.web.server',
+        'hifi_detector.web.routes',
+        'scipy.signal._spectral',
+        'scipy.signal._savitzky_golay',
+        'scipy.signal._sigtools',
+        'scipy.signal._peak_finding_utils',
+        'scipy.special._ufuncs_cxx',
+        'scipy.linalg._fblas',
+        'scipy.linalg._flapack',
+        'uvicorn.loops.auto',
+        'uvicorn.protocols.http.auto',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='hifi-detect-server',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='hifi-detect-server',
+)

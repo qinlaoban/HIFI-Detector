@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# PyInstaller
+tauri/dist-python/
+tauri/build-python/
+tauri/src-tauri/python/
+
+# Tauri / Rust
+tauri/src-tauri/target/
+tauri/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+tests/testdata/
