@@ -1,0 +1,37 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-07-21T14:21:37Z"
+modules:
+    core_library:
+        dir_name: Hi-Fi 音频核心分析引擎
+        title: Hi-Fi 音频核心分析引擎
+        scope:
+            - hifi_detector/core/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    tauri_desktop:
+        dir_name: tauri_desktop
+        title: tauri_desktop
+        scope:
+            - tauri/src-tauri/
+            - tauri/package.json
+            - tauri/hifi-detect.spec
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    web_server:
+        dir_name: Web UI 服务与 CLI 入口
+        title: Web UI 服务与 CLI 入口
+        scope:
+            - hifi_detector/web/
+            - hifi_detector/cli.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

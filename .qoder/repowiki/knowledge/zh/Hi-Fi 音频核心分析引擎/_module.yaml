@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: core_library
+title: Hi-Fi 音频核心分析引擎
+scope:
+    - hifi_detector/core/
+source_files: []
+depends_on: []
+related_to: []

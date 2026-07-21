@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: web_server
+title: Web UI 服务与 CLI 入口
+scope:
+    - hifi_detector/web/
+    - hifi_detector/cli.py
+source_files: []
+depends_on: []
+related_to: []

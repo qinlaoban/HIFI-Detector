@@ -118,6 +118,7 @@ def analyze_audio(file: UploadFile = File(...)):
             "channels": meta.channels,
             "duration_s": round(meta.duration_s, 2),
             "file_size_mb": meta.file_size_mb,
+            "file_size_bytes": meta.file_size_bytes,
             "bitrate_kbps": meta.bitrate_kbps,
         },
         "quality": {

@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: tauri_desktop
+title: tauri_desktop
+scope:
+    - tauri/src-tauri/
+    - tauri/package.json
+    - tauri/hifi-detect.spec
+source_files: []
+depends_on: []
+related_to: []
