@@ -96,6 +96,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .audio-card audio::-webkit-media-controls-timeline{border-radius:2px}
 .audio-card audio::-webkit-media-controls-volume-slider{filter:invert(.85)}
 
+/* Report download */
+.report-opts{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.rpt-btn{background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);padding:8px 16px;border-radius:var(--radius);cursor:pointer;font-size:13px;transition:.2s}
+.rpt-btn.active{background:var(--accent2);color:#0a0a0a;border-color:var(--accent2);font-weight:600}
+.download-btn{background:var(--accent);color:#fff;border:none;padding:10px 24px;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:.2s}
+.download-btn:hover{opacity:.92}
+.download-btn:disabled{opacity:.5;cursor:default}
+
 @media(max-width:640px){
   .header{padding:12px 16px}
   .header h1{font-size:15px}
@@ -157,6 +165,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="card" id="summaryCard" style="border-color:var(--accent2)">
       <div class="card-hdr open" onclick="toggleCard(this)" data-i18n="cardSummary">SUMMARY &amp; RECOMMENDATION</div>
       <div class="card-body show" id="cardSummary"></div>
+    </div>
+
+    <!-- Report Download -->
+    <div class="card" id="reportCard" style="display:none">
+      <div class="card-hdr open" data-i18n="cardReport">REPORT</div>
+      <div class="card-body show">
+        <div class="report-opts">
+          <button class="rpt-btn active" id="rptGraphic" onclick="selectReportFmt('graphic')" data-i18n="rptGraphic">Graphic (HTML)</button>
+          <button class="rpt-btn" id="rptText" onclick="selectReportFmt('text')" data-i18n="rptText">Text (MD)</button>
+        </div>
+        <button class="download-btn" id="downloadReportBtn" onclick="downloadReport()" data-i18n="rptDownload">Download Report</button>
+      </div>
     </div>
 
     <!-- Audio Info -->
@@ -288,6 +308,12 @@ const I18N = {
     summarySuggestionFake: "Not genuine Hi-Res. If you paid for it or expected Hi-Res, find a verified source.",
     summarySuggestionClip: "Clipping is irreversible. Listenable but damaged — for better quality, find an unclipped version.",
     summarySuggestionOther: "File is genuine lossless, but over-compressed during mastering. Listenable, not audiophile grade.",
+    cardReport: "REPORT",
+    rptGraphic: "Graphic (HTML)",
+    rptText: "Text (MD)",
+    rptDownload: "Download Report",
+    rptGen: "Generating...",
+    rptGenFail: "Report generation failed. Please try again.",
   },
   zh: {
     dropTitle: "拖拽音频文件到此处",
@@ -378,6 +404,12 @@ const I18N = {
     summarySuggestionFake: "这不是真 Hi-Res。付费购买或冲着 Hi-Res 来的，建议换可信来源。",
     summarySuggestionClip: "削波失真不可逆。能听但有损，追求音质建议换未削波版本。",
     summarySuggestionOther: "文件真实无损，但母带压缩过度。能听，非发烧级音质。",
+    cardReport: "报告",
+    rptGraphic: "图文版（HTML）",
+    rptText: "文字版（Markdown）",
+    rptDownload: "下载报告",
+    rptGen: "生成中...",
+    rptGenFail: "报告生成失败，请重试。",
   },
   ja: {
     dropTitle: "音声ファイルをドロップ",
@@ -468,6 +500,12 @@ const I18N = {
     summarySuggestionFake: "真のハイレゾではありません。有料購入やハイレゾ期待なら、信頼できるソースに変更を。",
     summarySuggestionClip: "クリッピングは不可逆。聴取可能だが損傷あり。音質追求なら未クリップ版へ。",
     summarySuggestionOther: "ファイルは真正なロスレスだが、マスタリング過圧縮。聴取可能、オーディオファイル級ではない。",
+    cardReport: "レポート",
+    rptGraphic: "図解版（HTML）",
+    rptText: "テキスト版（MD）",
+    rptDownload: "レポートをダウンロード",
+    rptGen: "生成中...",
+    rptGenFail: "レポート生成に失敗しました。もう一度お試しください。",
   }
 };
 
@@ -804,6 +842,9 @@ function renderResults(d) {
 
   // Fetch spectrogram
   loadSpectrogram();
+
+  // Show report download card
+  document.getElementById('reportCard').style.display = '';
 }
 
 function fmtDuration(s) {
@@ -847,7 +888,7 @@ async function loadSpectrogram() {
       margin: { l: 60, r: 30, t: 10, b: 50 },
       height: 400,
     };
-    Plotly.newPlot('specChart', [trace], layout, { responsive: true, displayModeBar: false });
+    return Plotly.newPlot('specChart', [trace], layout, { responsive: true, displayModeBar: false });
   } catch(e) { console.error('Spectrogram error:', e); }
 }
 
@@ -876,7 +917,7 @@ async function loadWaveform() {
       margin: { l: 50, r: 20, t: 10, b: 50 },
       height: 250,
     };
-    Plotly.newPlot('waveChart', [trace], layout, { responsive: true, displayModeBar: false });
+    return Plotly.newPlot('waveChart', [trace], layout, { responsive: true, displayModeBar: false });
   } catch(e) { console.error('Waveform error:', e); }
 }
 
@@ -900,6 +941,7 @@ function resetToUpload() {
   document.getElementById('uploadSection').style.display = '';
   document.getElementById('errorBox').style.display = 'none';
   document.getElementById('audioCard').style.display = 'none';
+  document.getElementById('reportCard').style.display = 'none';
   fileInput.value = '';
   fileId = null;
   currentData = null;
@@ -913,6 +955,254 @@ function resetToUpload() {
   // Clean up Plotly to avoid resize issues
   Plotly.purge('specChart');
   Plotly.purge('waveChart');
+}
+
+// ====== REPORT ======
+let reportFmt = 'graphic';
+
+function selectReportFmt(fmt) {
+  reportFmt = fmt;
+  document.getElementById('rptGraphic').classList.toggle('active', fmt === 'graphic');
+  document.getElementById('rptText').classList.toggle('active', fmt === 'text');
+}
+
+function reportFileName(ext) {
+  const fname = (currentData.filename || 'hifi-report').replace(/\.[^.]+$/, '');
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  return `HIFI-Report_${fname}_${ts}.${ext}`;
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function ensureChartsRendered() {
+  const spec = document.getElementById('specChart');
+  if (!spec || !spec.data) { try { await loadSpectrogram(); } catch(e) {} }
+  const wave = document.getElementById('waveChart');
+  if (!wave || !wave.data) { try { await loadWaveform(); } catch(e) {} }
+  // give Plotly a tick to finalize layout
+  await new Promise(r => setTimeout(r, 150));
+}
+
+async function downloadReport() {
+  if (!currentData) return;
+  const btn = document.getElementById('downloadReportBtn');
+  const orig = btn.textContent;
+  btn.textContent = t('rptGen');
+  btn.disabled = true;
+  try {
+    if (reportFmt === 'graphic') {
+      await ensureChartsRendered();
+      const html = await buildHtmlReport(currentData);
+      downloadBlob(html, reportFileName('html'), 'text/html;charset=utf-8');
+    } else {
+      const md = buildTextReport(currentData);
+      downloadBlob(md, reportFileName('md'), 'text/markdown;charset=utf-8');
+    }
+  } catch (e) {
+    console.error('Report error:', e);
+    alert(t('rptGenFail'));
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+async function buildHtmlReport(d) {
+  let specImg = '', waveImg = '';
+  try { specImg = await Plotly.toImage('specChart', { format: 'png', width: 1000, height: 400 }); } catch(e) { console.warn('spec export failed', e); }
+  try { waveImg = await Plotly.toImage('waveChart', { format: 'png', width: 1000, height: 250 }); } catch(e) { console.warn('wave export failed', e); }
+
+  const m = d.metadata, q = d.quality, l = d.loudness, dr = d.dynamic_range, a = d.authenticity;
+  const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+  const now = new Date().toLocaleString();
+
+  const verdictMap = { HIGH_QUALITY: 'High Quality', CLEAN: 'Clean', WARN: 'Minor Issues', ISSUES: 'Issues Detected' };
+  const verdict = verdictMap[d.verdict] || d.verdict;
+
+  const row = (label, value) =>
+    `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;color:#555">${label}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;font-weight:600">${value}</td></tr>`;
+  const mRow = (label, value, status) => {
+    const col = status === 'red' ? '#e94560' : status === 'yellow' ? '#d4a017' : status === 'green' ? '#2e7d32' : '#555';
+    return `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;color:#555">${label}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;font-weight:600;color:${col}">${value}</td></tr>`;
+  };
+
+  const infoTable = `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:8px 0">` +
+    row(t('format'), m.format) + row(t('subtype'), m.subtype) +
+    row(t('sampleRate'), (m.sample_rate/1000).toFixed(1) + ' kHz') + row(t('bitDepth'), m.bit_depth + ' bit') +
+    row(t('channels'), m.channels + ' ch') + row(t('duration'), fmtDuration(m.duration_s)) +
+    row(t('fileSize'), formatFileSize(m.file_size_bytes)) +
+    (m.bitrate_kbps ? row(t('bitrate'), m.bitrate_kbps + ' kbps') : '') + `</table>`;
+
+  const qTable = `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:8px 0">` +
+    mRow(t('clipping'), q.clipping.samples > 0 ? q.clipping.samples + ' ' + t('samples') : t('clean'), q.clipping.samples > 0 ? 'red' : 'green') +
+    mRow(t('dcOffset'), q.dc_offset_pct.toFixed(2) + '%', q.dc_offset_pct > 0.1 ? 'yellow' : 'green') +
+    mRow(t('chanBalance'), q.channel_balance_db.toFixed(1) + ' dB', q.channel_balance_db > 1 ? 'yellow' : 'green') +
+    mRow(t('truePeak'), tpMax.toFixed(2) + ' dBTP', tpMax > -0.1 ? 'red' : tpMax > -1 ? 'yellow' : 'green') +
+    mRow(t('dynamicRange'), 'DR ' + dr.dr_official, dr.dr_official >= 10 ? 'green' : 'red') +
+    mRow(t('rmsLevel'), l.rms_l_dbfs.toFixed(1) + ' dBFS', 'dim') +
+    mRow(t('integratedLUFS'), l.integrated_lufs.toFixed(1) + ' LUFS', 'dim') +
+    mRow(t('loudnessRange'), l.loudness_range_lu.toFixed(1) + ' LU', 'dim') +
+    mRow(t('bitDepthAuth'), q.bit_depth_suspicious ? t('suspect') + ' (' + m.bit_depth + '→' + q.effective_bits + ')' : t('ok'), q.bit_depth_suspicious ? 'yellow' : 'green') +
+    `</table>`;
+
+  const aTable = `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:8px 0">` +
+    mRow(t('spectralCutoff'), a.has_sharp_cutoff ? (a.cutoff_freq_hz||0).toFixed(0) + ' Hz (' + (a.cutoff_suspected_codec || t('unknown')) + ')' : t('noneDetected'), a.has_sharp_cutoff ? 'red' : 'green') +
+    mRow(t('upsampling'), a.is_suspected_upsampled ? '~' + (a.upsample_source_rate_hint||0) + ' Hz' : t('notDetected'), a.is_suspected_upsampled ? 'red' : 'green') +
+    mRow(t('bit24Auth'), (!a.low_bits_active && m.bit_depth >= 24) ? t('suspect') : t('ok'), (!a.low_bits_active && m.bit_depth >= 24) ? 'yellow' : 'green') +
+    `</table>`;
+
+  const summaryHtml = buildSummaryHtml(d);
+  const specBlock = specImg ? `<img src="${specImg}" style="width:100%;border:1px solid #ddd;border-radius:6px;margin:8px 0">` : `<p style="color:#999">Spectrogram unavailable</p>`;
+  const waveBlock = waveImg ? `<img src="${waveImg}" style="width:100%;border:1px solid #ddd;border-radius:6px;margin:8px 0">` : `<p style="color:#999">Waveform unavailable</p>`;
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>HIFI Detector Report — ${d.filename}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Hiragino Sans GB',sans-serif;max-width:860px;margin:0 auto;padding:32px;color:#222;line-height:1.6}
+  h1{font-size:22px;margin:0 0 4px} .sub{color:#888;font-size:13px;margin-bottom:24px}
+  h2{font-size:16px;border-bottom:2px solid #e94560;padding-bottom:6px;margin:28px 0 12px}
+  .verdict{padding:14px 20px;border-radius:8px;font-size:18px;font-weight:700;text-align:center;margin:16px 0;background:#1b5e20;color:#69f0ae}
+  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #eee;color:#aaa;font-size:12px}
+</style></head><body>
+  <h1>HIFI Detector — Audio Analysis Report</h1>
+  <div class="sub">${d.filename} · Generated ${now}</div>
+  <div class="verdict">${verdict}</div>
+  <h2>Summary & Recommendation</h2>
+  ${summaryHtml}
+  <h2>Audio Info</h2>
+  ${infoTable}
+  <h2>Quality Analysis</h2>
+  ${qTable}
+  <h2>Authenticity</h2>
+  ${aTable}
+  <h2>Spectrogram</h2>
+  ${specBlock}
+  <h2>Waveform</h2>
+  ${waveBlock}
+  <div class="footer">Generated by HIFI Detector — Offline audio authenticity & quality detection. No files were uploaded.</div>
+</body></html>`;
+}
+
+function buildSummaryHtml(d) {
+  const q = d.quality, l = d.loudness, dr = d.dynamic_range, a = d.authenticity, m = d.metadata;
+  const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+  const issues = [];
+  if (tpMax > -1) issues.push('peak');
+  if (q.clipping.samples > 0) issues.push('clip');
+  if (q.dc_offset_pct > 0.1) issues.push('dc');
+  if (q.channel_balance_db > 1) issues.push('balance');
+  if (dr.dr_official < 10) issues.push('dr');
+  if (a.is_suspected_upsampled) issues.push('upsample');
+  if (a.has_sharp_cutoff) issues.push('cutoff');
+  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
+  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
+
+  let verdictKey;
+  if (issues.length === 0) verdictKey = d.verdict === 'HIGH_QUALITY' ? 'summaryVerdictKeep' : 'summaryVerdictOk';
+  else if (hasAuthIssue) verdictKey = 'summaryVerdictFake';
+  else if (d.verdict === 'WARN') verdictKey = 'summaryVerdictWarn';
+  else verdictKey = 'summaryVerdictIssue';
+
+  let h = `<div style="font-size:16px;font-weight:700;color:#e94560;margin-bottom:12px">${t(verdictKey)}</div>`;
+  if (issues.length === 0) {
+    h += `<p style="color:#2e7d32">${t('summaryTipClean')}</p>`;
+  } else {
+    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR', upsample:'summaryTipUpsample', cutoff:'summaryTipCutoff', bitfake:'summaryTipBitFake' };
+    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official, bd:m.bit_depth };
+    const fillTip = (key) => { let s = t(tipMap[key]); return s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr).replace('{bd}',fmt.bd); };
+    h += '<ul style="margin:8px 0;padding-left:20px;line-height:1.8">';
+    for (const issue of issues) h += `<li>${fillTip(issue)}</li>`;
+    h += '</ul>';
+    const sug = hasAuthIssue ? t('summarySuggestionFake') : issues.includes('clip') ? t('summarySuggestionClip') : t('summarySuggestionOther');
+    h += `<div style="margin-top:10px;padding:10px 14px;background:#fff3f5;border-radius:6px;font-size:13px"><strong>${t('summarySuggestion')}:</strong> ${sug}</div>`;
+  }
+  return h;
+}
+
+function buildTextReport(d) {
+  const m = d.metadata, q = d.quality, l = d.loudness, dr = d.dynamic_range, a = d.authenticity;
+  const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+  const now = new Date().toLocaleString();
+  const L = [];
+  L.push('# HIFI Detector — Audio Analysis Report');
+  L.push('');
+  L.push(`**File:** ${d.filename}`);
+  L.push(`**Generated:** ${now}`);
+  L.push('');
+
+  const verdictMap = { HIGH_QUALITY:'High Quality', CLEAN:'Clean', WARN:'Minor Issues', ISSUES:'Issues Detected' };
+  L.push(`## Verdict: ${verdictMap[d.verdict] || d.verdict}`);
+  L.push('');
+
+  const issues = [];
+  if (tpMax > -1) issues.push('peak');
+  if (q.clipping.samples > 0) issues.push('clip');
+  if (q.dc_offset_pct > 0.1) issues.push('dc');
+  if (q.channel_balance_db > 1) issues.push('balance');
+  if (dr.dr_official < 10) issues.push('dr');
+  if (a.is_suspected_upsampled) issues.push('upsample');
+  if (a.has_sharp_cutoff) issues.push('cutoff');
+  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
+  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
+
+  L.push('## Summary & Recommendation');
+  if (issues.length === 0) {
+    L.push(t('summaryTipClean'));
+  } else {
+    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR', upsample:'summaryTipUpsample', cutoff:'summaryTipCutoff', bitfake:'summaryTipBitFake' };
+    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official, bd:m.bit_depth };
+    L.push('');
+    for (const issue of issues) {
+      let s = t(tipMap[issue]);
+      s = s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr).replace('{bd}',fmt.bd);
+      L.push('- ' + s);
+    }
+    const sug = hasAuthIssue ? t('summarySuggestionFake') : issues.includes('clip') ? t('summarySuggestionClip') : t('summarySuggestionOther');
+    L.push('');
+    L.push('**' + t('summarySuggestion') + ':** ' + sug);
+  }
+  L.push('');
+
+  L.push('## Audio Info');
+  L.push(`- ${t('format')}: ${m.format}`);
+  L.push(`- ${t('subtype')}: ${m.subtype}`);
+  L.push(`- ${t('sampleRate')}: ${(m.sample_rate/1000).toFixed(1)} kHz`);
+  L.push(`- ${t('bitDepth')}: ${m.bit_depth} bit`);
+  L.push(`- ${t('channels')}: ${m.channels} ch`);
+  L.push(`- ${t('duration')}: ${fmtDuration(m.duration_s)}`);
+  L.push(`- ${t('fileSize')}: ${formatFileSize(m.file_size_bytes)}`);
+  if (m.bitrate_kbps) L.push(`- ${t('bitrate')}: ${m.bitrate_kbps} kbps`);
+  L.push('');
+
+  L.push('## Quality Analysis');
+  L.push(`- ${t('clipping')}: ${q.clipping.samples > 0 ? q.clipping.samples + ' ' + t('samples') : t('clean')}`);
+  L.push(`- ${t('dcOffset')}: ${q.dc_offset_pct.toFixed(2)}%`);
+  L.push(`- ${t('chanBalance')}: ${q.channel_balance_db.toFixed(1)} dB`);
+  L.push(`- ${t('truePeak')}: ${tpMax.toFixed(2)} dBTP`);
+  L.push(`- ${t('dynamicRange')}: DR ${dr.dr_official}`);
+  L.push(`- ${t('rmsLevel')}: ${l.rms_l_dbfs.toFixed(1)} dBFS`);
+  L.push(`- ${t('integratedLUFS')}: ${l.integrated_lufs.toFixed(1)} LUFS`);
+  L.push(`- ${t('loudnessRange')}: ${l.loudness_range_lu.toFixed(1)} LU`);
+  L.push(`- ${t('bitDepthAuth')}: ${q.bit_depth_suspicious ? t('suspect') + ' (' + m.bit_depth + '→' + q.effective_bits + ')' : t('ok')}`);
+  L.push('');
+
+  L.push('## Authenticity');
+  L.push(`- ${t('spectralCutoff')}: ${a.has_sharp_cutoff ? (a.cutoff_freq_hz||0).toFixed(0) + ' Hz (' + (a.cutoff_suspected_codec || t('unknown')) + ')' : t('noneDetected')}`);
+  L.push(`- ${t('upsampling')}: ${a.is_suspected_upsampled ? '~' + (a.upsample_source_rate_hint||0) + ' Hz' : t('notDetected')}`);
+  L.push(`- ${t('bit24Auth')}: ${(!a.low_bits_active && m.bit_depth >= 24) ? t('suspect') : t('ok')}`);
+  L.push('');
+  L.push('---');
+  L.push('*Generated by HIFI Detector — Offline audio authenticity & quality detection. No files were uploaded.*');
+  return L.join('\n');
 }
 
 function toggleCard(hdr) {
