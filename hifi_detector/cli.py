@@ -24,14 +24,6 @@ app = typer.Typer(
 console = Console()
 
 
-def _judge(metric: str, value: float, thresholds: dict) -> tuple[str, str]:
-    """Return (verdict, style) for a metric."""
-    for level, (limit, style) in thresholds.items():
-        if value >= limit if "min" in level else value <= limit:
-            return level, style
-    return "OK", "green"
-
-
 def _bar(value: float, vmin: float, vmax: float, width: int = 12) -> str:
     """Draw a mini bar chart."""
     filled = int(max(0, min(width, (value - vmin) / (vmax - vmin) * width)))

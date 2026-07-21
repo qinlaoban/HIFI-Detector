@@ -388,13 +388,13 @@ def _detect_upsampling(
 
     if hf_ratio < 0.0005:  # < 0.05% energy above 22.05 kHz
         is_up = True
-        # Guess source rate
-        if sr == 192000 or sr == 176400:
-            src_hint = 44100 if sr in (176400, 192000) else 48000
-        elif sr == 96000 or sr == 88200:
-            src_hint = 44100 if sr == 88200 else 48000
+        # Guess source rate based on sample rate family
+        if sr == 176400 or sr == 88200:
+            src_hint = 44100
+        elif sr == 192000 or sr == 96000:
+            src_hint = 48000
         else:
-            # Check which 2x downsampled rate makes sense
+            # Check which base rate divides evenly
             for candidate in (44100, 48000):
                 if sr % candidate == 0:
                     src_hint = candidate

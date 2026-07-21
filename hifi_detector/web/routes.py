@@ -4,6 +4,7 @@ import json
 import tempfile
 import uuid
 import hashlib
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -19,10 +20,24 @@ from ..core.authenticity import analyze_authenticity
 
 router = APIRouter(prefix="/api")
 
-# In-memory cache: file_id -> (decoded AudioData, file_path)
-# Caching AudioData avoids decoding the same file 3 times
-# (analyze → spectrogram → waveform)
-_file_cache: dict[str, tuple[AudioData, Path]] = {}
+# Maximum upload size: 500 MB
+MAX_UPLOAD_SIZE = 500 * 1024 * 1024
+
+# LRU cache: file_id -> (decoded AudioData, file_path)
+# Limited to 20 entries to prevent memory/disk exhaustion
+_MAX_CACHE_ENTRIES = 20
+_file_cache: OrderedDict[str, tuple[AudioData, Path]] = OrderedDict()
+
+
+def _cache_put(fid: str, audio: AudioData, path: Path):
+    """Add entry to cache, evicting oldest if over limit."""
+    if fid in _file_cache:
+        _file_cache.move_to_end(fid)
+    else:
+        if len(_file_cache) >= _MAX_CACHE_ENTRIES:
+            _, (_, old_path) = _file_cache.popitem(last=False)
+            old_path.unlink(missing_ok=True)
+        _file_cache[fid] = (audio, path)
 
 
 def _file_id(file_path: Path) -> str:
@@ -43,10 +58,14 @@ def analyze_audio(file: UploadFile = File(...)):
     if ext not in allowed:
         raise HTTPException(400, f"Unsupported format: {ext}")
 
+    # Read content with size limit
+    content = file.file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)} MB)")
+
     # Save to temp file
     suffix = ext or ".tmp"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        content = file.file.read()
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
@@ -59,7 +78,7 @@ def analyze_audio(file: UploadFile = File(...)):
         raise HTTPException(400, f"Failed to read audio file: {e}")
 
     # Cache decoded AudioData so spectrogram/waveform don't re-decode
-    _file_cache[fid] = (audio, tmp_path)
+    _cache_put(fid, audio, tmp_path)
 
     try:
         meta = extract_metadata(audio)

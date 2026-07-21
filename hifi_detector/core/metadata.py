@@ -36,7 +36,7 @@ class MetadataReport:
 
         # Estimate bitrate
         if audio.duration_s > 0:
-            bitrate = int((path.stat().st_size * 8) / audio.duration_s / 1000)
+            bitrate = int((raw_bytes * 8) / audio.duration_s / 1000)
         else:
             bitrate = None
 

@@ -186,7 +186,7 @@ def _rate_dr(dr_value: int) -> tuple[str, str]:
 def _check_boundary_risk(dr_official: int, dr_precise_avg: float) -> tuple[bool, str]:
     """Check if the DR value is near a rounding boundary.
 
-    If preciss DR is very close to the rounding threshold (±0.5),
+    If precise DR is very close to the rounding threshold (±0.5),
     the official DR integer may be off by 1. This is a known issue
     with the DR14 integer rounding.
     """

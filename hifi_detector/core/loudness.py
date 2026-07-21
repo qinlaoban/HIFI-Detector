@@ -3,12 +3,13 @@
 References:
 - ITU-R BS.1770-4 (LKFS/LUFS measurement)
 - True Peak: ITU-R BS.1770 oversampling method
+- EBU R128 (Loudness Range)
 """
 
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.signal import resample_poly, lfilter
+from scipy.signal import resample_poly, sosfilt
 
 from .audio_io import AudioData
 
@@ -54,7 +55,8 @@ def analyze_loudness(audio: AudioData) -> LoudnessReport:
     if n_channels == 1:
         mono = samples[0]
     else:
-        mono = samples[0] + samples[1]
+        # BS.1770: downmix stereo to mono by averaging (not summing)
+        mono = (samples[0] + samples[1]) / 2.0
     mono_kweighted = _k_weight_filter(mono, sample_rate)
 
     # --- Integrated LUFS ---
@@ -93,31 +95,30 @@ def _true_peak(channel: np.ndarray, sample_rate: int) -> float:
 def _integrated_lufs(mono_kweighted: np.ndarray, sample_rate: int) -> float:
     """Calculate Integrated LUFS using ITU-R BS.1770 K-weighting.
 
-    Simplified implementation of the BS.1770 algorithm.
+    Uses 400ms blocks with 75% overlap (step = 100ms) per BS.1770-4.
+    Two-pass gating: absolute (-70 LUFS) then relative (-10 LU).
     """
-    # Calculate power in 400ms gating blocks (vectorized)
     block_size = int(0.4 * sample_rate)
-    if block_size < 1:
-        block_size = 1
-
-    n_blocks = len(mono_kweighted) // block_size
-    if n_blocks == 0:
+    step_size = int(0.1 * sample_rate)  # 75% overlap
+    if block_size < 1 or step_size < 1:
         return -120.0
 
-    # Vectorized: reshape into blocks and compute mean power per block
-    truncated = mono_kweighted[: n_blocks * block_size]
-    blocks = truncated.reshape(n_blocks, block_size)
-    powers = np.mean(blocks ** 2, axis=1)
+    n_samples = len(mono_kweighted)
+    if n_samples < block_size:
+        return -120.0
+
+    # Compute mean power for each overlapping block (vectorized via stride tricks)
+    n_blocks = (n_samples - block_size) // step_size + 1
+    # Use sliding window view for efficiency
+    from numpy.lib.stride_tricks import sliding_window_view
+    windows = sliding_window_view(mono_kweighted, block_size)[::step_size]
+    powers = np.mean(windows ** 2, axis=1)
 
     if np.all(powers <= 0):
         return -120.0
 
-    # Absolute gating: -70 LUFS (=-70 dB relative to full scale)
-    # Gate at -10 LU relative to the mean loudness
-    mean_power = np.mean(powers)
-
-    # First pass: gate blocks below -70 LUFS absolute
-    gate_absolute = 10 ** (-70 / 10)  # -70 LUFS in linear power
+    # First pass: absolute gate at -70 LUFS
+    gate_absolute = 10 ** ((-70 + 0.691) / 10)  # -70 LUFS in linear power
     gated_powers = powers[powers > gate_absolute]
 
     if len(gated_powers) == 0:
@@ -142,20 +143,27 @@ def _integrated_lufs(mono_kweighted: np.ndarray, sample_rate: int) -> float:
 
 
 def _loudness_range(mono_kweighted: np.ndarray, sample_rate: int) -> float:
-    """Calculate Loudness Range (LRA) per EBU R128 / BS.1770."""
-    # 3s blocks for short-term loudness (vectorized)
+    """Calculate Loudness Range (LRA) per EBU R128 / BS.1770.
+
+    Uses 3s blocks with 75% overlap (step = 750ms).
+    """
     block_size = int(3.0 * sample_rate)
-    if block_size < 1:
+    step_size = int(0.75 * sample_rate)  # 75% overlap
+    if block_size < 1 or step_size < 1:
         return 0.0
 
-    n_blocks = len(mono_kweighted) // block_size
+    n_samples = len(mono_kweighted)
+    if n_samples < block_size:
+        return 0.0
+
+    n_blocks = (n_samples - block_size) // step_size + 1
     if n_blocks < 2:
         return 0.0
 
-    # Vectorized block power computation
-    truncated = mono_kweighted[: n_blocks * block_size]
-    blocks = truncated.reshape(n_blocks, block_size)
-    powers = np.mean(blocks ** 2, axis=1)
+    # Vectorized block power computation with overlapping windows
+    from numpy.lib.stride_tricks import sliding_window_view
+    windows = sliding_window_view(mono_kweighted, block_size)[::step_size]
+    powers = np.mean(windows ** 2, axis=1)
 
     st_loudness = np.full(n_blocks, -120.0)
     mask = powers > 0
@@ -175,28 +183,58 @@ def _loudness_range(mono_kweighted: np.ndarray, sample_rate: int) -> float:
     return lra
 
 
-def _k_weight_filter(signal: np.ndarray, sample_rate: int) -> np.ndarray:
+def _k_weight_filter(sig: np.ndarray, sample_rate: int) -> np.ndarray:
     """Apply ITU-R BS.1770 K-weighting filter to mono signal.
 
-    Uses scipy.signal.lfilter (vectorized C implementation) instead of
-    Python for-loops — 100x+ speedup on typical audio files.
+    Two cascaded biquad (second-order IIR) stages:
+      Stage 1: High-shelf pre-filter (+4 dB above ~1500 Hz)
+      Stage 2: RLB high-pass filter (fc ≈ 38.1 Hz, Q ≈ 0.5003)
+
+    Coefficients derived via bilinear transform of the analog prototypes
+    specified in ITU-R BS.1770-4.
     """
-    # High-pass at fc ~ 38 Hz
-    # Transfer function H(z) = alpha * (1 - z^-1) / (1 - alpha * z^-1)
-    fc_hp = 38.0
-    tau_hp = 1.0 / (2.0 * np.pi * fc_hp)
-    alpha_hp = tau_hp / (tau_hp + 1.0 / sample_rate)
-    b_hp = np.array([alpha_hp, -alpha_hp])
-    a_hp = np.array([1.0, -alpha_hp])
-    filtered = lfilter(b_hp, a_hp, signal)
+    sos = np.vstack([
+        _high_shelf_biquad(sample_rate, gain_db=3.999843853973347, f0=1681.974450955533, Q=0.7071752369554196),
+        _high_pass_biquad(sample_rate, f0=38.13547087602444, Q=0.5003270373238773),
+    ])
+    return sosfilt(sos, sig).astype(np.float64)
 
-    # RLB shelf boost above ~1.5 kHz
-    # Transfer function H(z) = (1 - alpha) / (1 - alpha * z^-1)
-    fc_shelf = 1500.0
-    tau_shelf = 1.0 / (2.0 * np.pi * fc_shelf)
-    alpha_shelf = tau_shelf / (tau_shelf + 1.0 / sample_rate)
-    b_shelf = np.array([1.0 - alpha_shelf])
-    a_shelf = np.array([1.0, -alpha_shelf])
-    result = lfilter(b_shelf, a_shelf, filtered)
 
-    return result
+def _high_shelf_biquad(fs: int, gain_db: float, f0: float, Q: float) -> np.ndarray:
+    """Design a high-shelf biquad filter (Audio EQ Cookbook formulas).
+
+    Returns a single SOS section [b0, b1, b2, a0, a1, a2] (normalized).
+    """
+    A = 10 ** (gain_db / 40.0)
+    w0 = 2 * np.pi * f0 / fs
+    alpha = np.sin(w0) / (2.0 * Q)
+    cos_w0 = np.cos(w0)
+    sqrt_A = np.sqrt(A)
+
+    b0 = A * ((A + 1) + (A - 1) * cos_w0 + 2 * sqrt_A * alpha)
+    b1 = -2 * A * ((A - 1) + (A + 1) * cos_w0)
+    b2 = A * ((A + 1) + (A - 1) * cos_w0 - 2 * sqrt_A * alpha)
+    a0 = (A + 1) - (A - 1) * cos_w0 + 2 * sqrt_A * alpha
+    a1 = 2 * ((A - 1) - (A + 1) * cos_w0)
+    a2 = (A + 1) - (A - 1) * cos_w0 - 2 * sqrt_A * alpha
+
+    return np.array([b0, b1, b2, a0, a1, a2]) / a0
+
+
+def _high_pass_biquad(fs: int, f0: float, Q: float) -> np.ndarray:
+    """Design a 2nd-order Butterworth high-pass biquad filter.
+
+    Returns a single SOS section [b0, b1, b2, a0, a1, a2] (normalized).
+    """
+    w0 = 2 * np.pi * f0 / fs
+    alpha = np.sin(w0) / (2.0 * Q)
+    cos_w0 = np.cos(w0)
+
+    b0 = (1 + cos_w0) / 2
+    b1 = -(1 + cos_w0)
+    b2 = (1 + cos_w0) / 2
+    a0 = 1 + alpha
+    a1 = -2 * cos_w0
+    a2 = 1 - alpha
+
+    return np.array([b0, b1, b2, a0, a1, a2]) / a0
