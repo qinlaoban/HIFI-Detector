@@ -268,25 +268,26 @@ const I18N = {
     boundaryRisk: "Boundary risk",
     analyzeAnother: "Analyze Another File",
     // Summary
-    summaryVerdictKeep: "Safe to keep — this is a high-quality audio file.",
-    summaryVerdictOk: "Safe to keep — no significant issues detected.",
-    summaryVerdictWarn: "Can keep, but has minor issues.",
-    summaryVerdictIssue: "Be cautious — suspicious issues detected.",
-    summaryTipPeak: "The overall level is too high, close to clipping. May sound harsh or distorted. If it sounds unpleasant, try a different version.",
-    summaryTipClip: "Hard clipping detected. The waveform has been cut off — this causes audible distortion and cannot be recovered.",
-    summaryTipDC: "DC offset detected. This is usually a recording or transfer artifact and can be fixed with a high-pass filter.",
-    summaryTipBalance: "Channel imbalance. Left and right channels have significantly different levels.",
-    summaryTipDR: "Dynamic range is low. This usually means heavy compression was applied, making the music sound flat and lifeless.",
-    summaryTipUpsample: "This file appears to be upsampled from a lower sample rate. It's not a real hi-res recording — just a CD-quality file that was stretched to a higher resolution.",
-    summaryTipCutoff: "Sharp frequency cutoff detected. This suggests the audio came from a lossy source (e.g. MP3) and was converted to a lossless format.",
-    summaryTipBitFake: "Lower bits are not active. The file claims to be 24/32-bit but may have been padded from a 16-bit source.",
-    summaryTipClean: "All checks passed. No quality or authenticity issues found.",
+    summaryVerdictKeep: "Keep it — this is a high-quality audio file.",
+    summaryVerdictOk: "Keep it — no issues detected.",
+    summaryVerdictWarn: "Keep it, but minor issues exist.",
+    summaryVerdictFake: "Source is questionable — likely not genuine lossless.",
+    summaryVerdictIssue: "Audio quality issues — the file is real, but poorly mastered.",
+    summaryTipPeak: "Level too high ({tp} dBTP), near the clipping limit. Sounds harsh.",
+    summaryTipClip: "Clipped ({n} samples). Waveform tops are flattened — distortion is irreversible.",
+    summaryTipDC: "DC offset {dc}%, a recording/transfer artifact. Fixable with a high-pass filter.",
+    summaryTipBalance: "Channel imbalance ({bal} dB), left/right levels differ significantly.",
+    summaryTipDR: "Dynamic range only DR {dr}, low. Over-compressed, sounds flat.",
+    summaryTipUpsample: "Likely upsampled. Not real Hi-Res — stretched from CD quality.",
+    summaryTipCutoff: "Frequency cutoff detected. Originated from a lossy source (e.g. MP3).",
+    summaryTipBitFake: "Lower bits inactive. Claims {bd}-bit but likely padded from 16-bit.",
+    summaryTipClean: "All checks passed. No quality or authenticity issues.",
     summaryDetail: "Details",
     summaryWhatNow: "What does this mean?",
-    summarySuggestion: "Suggestion",
-    summarySuggestionFake: "This file may not be genuine hi-res. If you paid for it or it claims to be hi-res, consider finding a verified source.",
-    summarySuggestionClip: "Clipping distortion is permanent. The only fix is to find a version that was not clipped during mastering.",
-    summarySuggestionOther: "These issues are usually from mastering choices, not from a fake source. It's still real hi-res, just processed differently.",
+    summarySuggestion: "Bottom line",
+    summarySuggestionFake: "Not genuine Hi-Res. If you paid for it or expected Hi-Res, find a verified source.",
+    summarySuggestionClip: "Clipping is irreversible. Listenable but damaged — for better quality, find an unclipped version.",
+    summarySuggestionOther: "File is genuine lossless, but over-compressed during mastering. Listenable, not audiophile grade.",
   },
   zh: {
     dropTitle: "拖拽音频文件到此处",
@@ -357,25 +358,26 @@ const I18N = {
     boundaryRisk: "边界风险",
     analyzeAnother: "再分析一个",
     // Summary
-    summaryVerdictKeep: "推荐保留 — 这是一份高质量音频文件。",
-    summaryVerdictOk: "可以保留 — 各项指标正常，未检测到问题。",
-    summaryVerdictWarn: "可以保留，但有一些小瑕疵。",
-    summaryVerdictIssue: "建议谨慎 — 检测到可疑问题。",
-    summaryTipPeak: "整体电平过高，接近削波上限，可能导致听感刺耳或失真。如果听起来不舒服，建议找其他版本。",
-    summaryTipClip: "检测到硬削波失真。波形被削平了——这会导致可闻失真且无法修复。",
-    summaryTipDC: "存在直流偏移。通常是录音或转录过程中引入的，可以用高通滤波器修复。",
-    summaryTipBalance: "左右声道电平差异较大，声道不平衡。",
-    summaryTipDR: "动态范围偏低。通常意味着经过较强压缩处理，音乐听起来会平淡、缺乏层次感。",
-    summaryTipUpsample: "疑似从更低采样率拉伸而来。这不是真正的 Hi-Res 录音，只是把 CD 音质的文件拉大了分辨率。",
-    summaryTipCutoff: "检测到频谱被截断。可能源自有损压缩格式（如 MP3），然后被转成了无损格式。",
-    summaryTipBitFake: "低位未被使用。文件声称是 24/32-bit，但可能从 16-bit 音源填充而来。",
-    summaryTipClean: "所有检测项通过，未发现任何质量或真伪问题。",
+    summaryVerdictKeep: "推荐保留 — 高质量音频文件。",
+    summaryVerdictOk: "可以保留 — 各项指标正常。",
+    summaryVerdictWarn: "可以保留，有轻微瑕疵。",
+    summaryVerdictFake: "文件来源存疑 — 疑似非真无损。",
+    summaryVerdictIssue: "音质有问题 — 文件是真的，但处理不佳。",
+    summaryTipPeak: "电平过高（{tp} dBTP），接近削波上限，听感偏冲。",
+    summaryTipClip: "已削波（{n} 处样本），波形顶部被切平，失真不可逆。",
+    summaryTipDC: "直流偏移 {dc}%，录音/转录引入，可用高通滤波器修复。",
+    summaryTipBalance: "声道不平衡（{bal} dB），左右电平差异明显。",
+    summaryTipDR: "动态范围仅 DR {dr}，偏低。压缩过度，听感平淡。",
+    summaryTipUpsample: "疑似升频。非真 Hi-Res，是 CD 音质拉伸而来。",
+    summaryTipCutoff: "频谱截断。源自有损格式（如 MP3）转无损。",
+    summaryTipBitFake: "低位未激活。声称 {bd}-bit，疑似从 16-bit 填充。",
+    summaryTipClean: "所有检测项通过，未发现质量或真伪问题。",
     summaryDetail: "具体问题",
     summaryWhatNow: "这意味着什么？",
-    summarySuggestion: "建议",
-    summarySuggestionFake: "这份文件可能不是真正的 Hi-Res。如果你是付费购买的或它声称是 Hi-Res 的，建议找可信来源验证。",
-    summarySuggestionClip: "削波失真是永久性的。唯一的解决办法是找一个没有被削波的版本。",
-    summarySuggestionOther: "这些问题通常来自母带处理而非伪造。文件本身是真实的，只是处理方式不同。",
+    summarySuggestion: "结论",
+    summarySuggestionFake: "这不是真 Hi-Res。付费购买或冲着 Hi-Res 来的，建议换可信来源。",
+    summarySuggestionClip: "削波失真不可逆。能听但有损，追求音质建议换未削波版本。",
+    summarySuggestionOther: "文件真实无损，但母带压缩过度。能听，非发烧级音质。",
   },
   ja: {
     dropTitle: "音声ファイルをドロップ",
@@ -449,22 +451,23 @@ const I18N = {
     summaryVerdictKeep: "保存推奨 — 高品質な音声ファイルです。",
     summaryVerdictOk: "保存して問題ありません — 重大な問題は検出されませんでした。",
     summaryVerdictWarn: "保存できますが、軽微な問題があります。",
-    summaryVerdictIssue: "注意が必要 — 疑わしい問題が検出されました。",
-    summaryTipPeak: "全体のレベルが高すぎ、クリッピングに近い状態です。耳障りに聞こえる可能性があります。不快に感じる場合は別のバージョンを探してください。",
-    summaryTipClip: "ハードクリッピングが検出されました。波形が切り取られており、可聴な歪みが発生しています。これは修復不可能です。",
-    summaryTipDC: "DCオフセットが検出されました。通常は録音または転送時のアーティファクトで、ハイパスフィルターで修正可能です。",
-    summaryTipBalance: "左右チャンネルのレベルに大きな差があります。",
-    summaryTipDR: "ダイナミックレンジが低いです。強いコンプレッションが適用されており、音楽が平坦で生気なく聞こえます。",
-    summaryTipUpsample: "このファイルは低いサンプルレートからアップサンプリングされた可能性があります。真のハイレゾ録音ではなく、CD品質のファイルを拡大したものです。",
-    summaryTipCutoff: "周波数スペクトルが急激にカットオフされています。これは非可逆圧縮（MP3など）から変換された可能性を示します。",
-    summaryTipBitFake: "下位ビットが使用されていません。ファイルは24/32-bitと表示されていますが、16-bitソースからパディングされた可能性があります。",
-    summaryTipClean: "すべてのチェックに合格しました。品質や真正性の問題は見つかりませんでした。",
+    summaryVerdictFake: "出典に疑義あり — 真のロスレスではない可能性。",
+    summaryVerdictIssue: "音質に問題あり — ファイル自体は本物ですが、マスタリング不良。",
+    summaryTipPeak: "レベルが高すぎ（{tp} dBTP）、クリッピング限界に接近。耳障りです。",
+    summaryTipClip: "クリッピングあり（{n} サンプル）。波形頂部が平坦化 — 歪みは修復不可。",
+    summaryTipDC: "DCオフセット {dc}%、録音/転送時のアーティファクト。ハイパスフィルターで修正可能。",
+    summaryTipBalance: "チャンネル不均衡（{bal} dB）、左右レベルに明らかな差。",
+    summaryTipDR: "ダイナミックレンジ DR {dr} のみ、低い。過圧縮、平坦に聞こえます。",
+    summaryTipUpsample: "アップサンプリングの疑い。真のハイレゾではなく、CD品質からの引き伸ばし。",
+    summaryTipCutoff: "周波数カットオフ検出。非可逆圧縮（MP3等）からの変換。",
+    summaryTipBitFake: "下位ビット不活性。{bd}-bitと表示も16-bitからのパディングの疑い。",
+    summaryTipClean: "全チェック合格。品質・真正性の問題なし。",
     summaryDetail: "詳細",
     summaryWhatNow: "これはどういう意味？",
-    summarySuggestion: "推奨",
-    summarySuggestionFake: "このファイルは真のハイレゾではない可能性があります。有料で購入した場合やハイレゾと主張されている場合は、信頼できるソースを確認してください。",
-    summarySuggestionClip: "クリッピング歪みは永久的です。唯一の解決策は、マスタリング時にクリッピングされていないバージョンを見つけることです。",
-    summarySuggestionOther: "これらの問題は通常、偽造ではなくマスタリングの選択によるものです。ファイル自体は本物で、処理方法が異なるだけです。",
+    summarySuggestion: "結論",
+    summarySuggestionFake: "真のハイレゾではありません。有料購入やハイレゾ期待なら、信頼できるソースに変更を。",
+    summarySuggestionClip: "クリッピングは不可逆。聴取可能だが損傷あり。音質追求なら未クリップ版へ。",
+    summarySuggestionOther: "ファイルは真正なロスレスだが、マスタリング過圧縮。聴取可能、オーディオファイル級ではない。",
   }
 };
 
@@ -600,12 +603,21 @@ function renderSummary(d) {
   if (a.has_sharp_cutoff) issues.push('cutoff');
   if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
 
-  // Verdict sentence
+  // Classify: authenticity problems vs. quality-only
+  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
+
+  // Verdict sentence — authenticity issues take priority
   let verdictKey;
-  if (d.verdict === 'HIGH_QUALITY') verdictKey = 'summaryVerdictKeep';
-  else if (d.verdict === 'CLEAN') verdictKey = 'summaryVerdictOk';
-  else if (d.verdict === 'WARN') verdictKey = 'summaryVerdictWarn';
-  else verdictKey = 'summaryVerdictIssue';
+  if (issues.length === 0) {
+    if (d.verdict === 'HIGH_QUALITY') verdictKey = 'summaryVerdictKeep';
+    else verdictKey = 'summaryVerdictOk';
+  } else if (hasAuthIssue) {
+    verdictKey = 'summaryVerdictFake';
+  } else if (d.verdict === 'WARN') {
+    verdictKey = 'summaryVerdictWarn';
+  } else {
+    verdictKey = 'summaryVerdictIssue';
+  }
 
   let html = '<div style="font-size:16px;font-weight:700;margin-bottom:14px;color:var(--accent2)">' + t(verdictKey) + '</div>';
 
@@ -618,17 +630,33 @@ function renderSummary(d) {
       cutoff: 'summaryTipCutoff', bitfake: 'summaryTipBitFake'
     };
 
+    // Value substitutions per issue type
+    const fmt = {
+      tp: tpMax !== null && tpMax !== undefined ? tpMax.toFixed(1) : '—',
+      n: q.clipping.samples,
+      dc: q.dc_offset_pct.toFixed(2),
+      bal: q.channel_balance_db.toFixed(1),
+      dr: dr.dr_official,
+      bd: m.bit_depth
+    };
+    function fillTip(key) {
+      let s = t(tipMap[key]);
+      s = s.replace('{tp}', fmt.tp).replace('{n}', fmt.n).replace('{dc}', fmt.dc)
+           .replace('{bal}', fmt.bal).replace('{dr}', fmt.dr).replace('{bd}', fmt.bd);
+      return s;
+    }
+
     html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:8px">' + t('summaryDetail') + ':</div>';
     html += '<ul style="margin:0;padding:0 0 0 18px;line-height:1.8">';
     for (const issue of issues) {
-      html += '<li style="margin-bottom:6px;font-size:13px;color:var(--text)">' + t(tipMap[issue]) + '</li>';
+      html += '<li style="margin-bottom:6px;font-size:13px;color:var(--text)">' + fillTip(issue) + '</li>';
     }
     html += '</ul>';
 
-    // Simple suggestion
+    // Bottom-line suggestion
     html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(233,69,96,0.08);border-radius:6px;font-size:12px;color:var(--text-dim)">';
     html += '<strong style="color:var(--accent2)">' + t('summarySuggestion') + ':</strong> ';
-    if (issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake')) {
+    if (hasAuthIssue) {
       html += t('summarySuggestionFake');
     } else if (issues.includes('clip')) {
       html += t('summarySuggestionClip');
