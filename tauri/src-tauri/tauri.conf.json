@@ -37,7 +37,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "python/*"
+      "python/**"
     ],
     "externalBin": [],
     "copyright": "HIFI Detector",
