@@ -170,6 +170,8 @@ fn main() {
         .manage(server_ok)
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
+                // Force dark title bar on Windows
+                let _ = window.set_theme(Some(tauri::Theme::Dark));
                 if server_running {
                     let url = format!("http://127.0.0.1:{}", port);
                     let _ = window.navigate(url.parse().unwrap());
