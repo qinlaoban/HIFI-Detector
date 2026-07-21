@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis", "appx"],
+    "targets": ["msi", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -50,12 +50,6 @@
       },
       "nsis": {
         "installMode": "currentUser"
-      },
-      "appx": {
-        "enabled": true,
-        "publisher": "CN=HIFI Detector",
-        "publisherDisplayName": "HIFI Detector",
-        "identityName": "com.hifidetector.app"
       }
     }
   },

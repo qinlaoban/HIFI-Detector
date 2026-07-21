@@ -1,4 +1,4 @@
-name: Build Windows MSIX
+name: Build Windows
 
 on:
   workflow_dispatch:
@@ -11,15 +11,14 @@ on:
         options:
           - x64
           - arm64
-          - x64,arm64
   push:
     tags:
       - 'v*'
 
 jobs:
-  build-msix:
+  build-windows:
     runs-on: windows-latest
-    name: Build Windows MSIX (${{ github.event.inputs.arch || 'x64' }})
+    name: Build Windows (${{ github.event.inputs.arch || 'x64' }})
 
     steps:
       - name: Checkout
@@ -89,48 +88,32 @@ jobs:
           npm install
 
       # ============================================================
-      # Build: Tauri (MSI + NSIS + AppX/MSIX)
+      # Build: Tauri (MSI + NSIS)
       # ============================================================
       - name: Build Tauri Windows
         shell: pwsh
         run: |
           cd tauri
           $arch = "${{ github.event.inputs.arch || 'x64' }}"
-          if ($arch -eq 'x64') {
-            npx tauri build --target x86_64-pc-windows-msvc
-          } elseif ($arch -eq 'arm64') {
-            npx tauri build --target aarch64-pc-windows-msvc
-          } else {
-            npx tauri build --target x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
-          }
+          $env:TAURI_ENV_TARGET_TRIPLE = if ($arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+          npx tauri build
 
       # ============================================================
       # Artifacts
       # ============================================================
-      - name: Upload MSIX/AppX
-        uses: actions/upload-artifact@v4
-        with:
-          name: msix-appx
-          path: |
-            tauri/src-tauri/target/**/bundle/appx/**/*.msix
-            tauri/src-tauri/target/**/bundle/appx/**/*.appx
-            tauri/src-tauri/target/**/bundle/appx/**/*.msixbundle
-            tauri/src-tauri/target/**/bundle/appx/**/*.appxbundle
-          if-no-files-found: ignore
-
       - name: Upload MSI
         uses: actions/upload-artifact@v4
         with:
           name: msi-installer
           path: tauri/src-tauri/target/**/bundle/msi/*.msi
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: Upload NSIS
         uses: actions/upload-artifact@v4
         with:
           name: nsis-installer
           path: tauri/src-tauri/target/**/bundle/nsis/*.exe
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       # ============================================================
       # Release: auto-attach artifacts on tag push
@@ -140,10 +123,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            tauri/src-tauri/target/**/bundle/appx/**/*.msix
-            tauri/src-tauri/target/**/bundle/appx/**/*.appx
-            tauri/src-tauri/target/**/bundle/appx/**/*.msixbundle
-            tauri/src-tauri/target/**/bundle/appx/**/*.appxbundle
             tauri/src-tauri/target/**/bundle/msi/*.msi
             tauri/src-tauri/target/**/bundle/nsis/*.exe
           draft: true
