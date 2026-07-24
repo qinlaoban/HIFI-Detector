@@ -293,6 +293,16 @@ const I18N = {
     summaryVerdictWarn: "Keep it, but minor issues exist.",
     summaryVerdictFake: "Source is questionable — likely not genuine lossless.",
     summaryVerdictIssue: "Audio quality issues — the file is real, but poorly mastered.",
+    // Two-layer summary
+    summaryAuthTitle: "Authenticity",
+    summaryAuthClean: "Passed — no signs of tampering.",
+    summaryAuthAmbiguous: "Uncertain — borderline results, cannot rule out lossy origin.",
+    summaryAuthSuspicious: "Suspicious — the file likely originated from a lossy source.",
+    summaryQualityTitle: "Quality",
+    summaryQualityGood: "Good — no audio artifacts detected.",
+    summaryQualityFair: "Fair — minor issues, still listenable.",
+    summaryQualityPoor: "Poor — audible defects, not recommended for collection.",
+    summaryBitrateLow: "Bitrate unusually low ({actual} kbps, PCM equivalent {pcm} kbps). File may be very sparse or originated from a lossy source.",
     summaryTipPeak: "Level too high ({tp} dBTP), near the clipping limit. Sounds harsh.",
     summaryTipClip: "Clipped ({n} samples). Waveform tops are flattened — distortion is irreversible.",
     summaryTipDC: "DC offset {dc}%, a recording/transfer artifact. Fixable with a high-pass filter.",
@@ -389,6 +399,16 @@ const I18N = {
     summaryVerdictWarn: "可以保留，有轻微瑕疵。",
     summaryVerdictFake: "文件来源存疑 — 疑似非真无损。",
     summaryVerdictIssue: "音质有问题 — 文件是真的，但处理不佳。",
+    // Two-layer summary
+    summaryAuthTitle: "真伪验证",
+    summaryAuthClean: "通过 — 未发现伪造迹象。",
+    summaryAuthAmbiguous: "不确定 — 处于判断边界，不排除有损来源。",
+    summaryAuthSuspicious: "可疑 — 文件可能源自有损格式。",
+    summaryQualityTitle: "音质评估",
+    summaryQualityGood: "良好 — 未检测到音质缺陷。",
+    summaryQualityFair: "一般 — 有轻微问题，仍可听。",
+    summaryQualityPoor: "差 — 存在可闻缺陷，不建议收藏。",
+    summaryBitrateLow: "码率异常低（{actual} kbps，PCM 等效 {pcm} kbps）。文件可能内容极简或源自有损格式。",
     summaryTipPeak: "电平过高（{tp} dBTP），接近削波上限，听感偏冲。",
     summaryTipClip: "已削波（{n} 处样本），波形顶部被切平，失真不可逆。",
     summaryTipDC: "直流偏移 {dc}%，录音/转录引入，可用高通滤波器修复。",
@@ -485,6 +505,16 @@ const I18N = {
     summaryVerdictWarn: "保存できますが、軽微な問題があります。",
     summaryVerdictFake: "出典に疑義あり — 真のロスレスではない可能性。",
     summaryVerdictIssue: "音質に問題あり — ファイル自体は本物ですが、マスタリング不良。",
+    // Two-layer summary
+    summaryAuthTitle: "真正性検証",
+    summaryAuthClean: "合格 — 改ざんの痕跡はありません。",
+    summaryAuthAmbiguous: "不確定 — 境界値の結果、非可逆ソースの可能性あり。",
+    summaryAuthSuspicious: "疑わしい — 非可逆圧縮からの変換の可能性が高いです。",
+    summaryQualityTitle: "品質評価",
+    summaryQualityGood: "良好 — 音質上の欠陥は検出されません。",
+    summaryQualityFair: "普通 — 軽微な問題あり、聴取可能。",
+    summaryQualityPoor: "不良 — 可聴レベルの欠陥、コレクション非推奨。",
+    summaryBitrateLow: "ビットレートが異常に低い（{actual} kbps、PCM換算 {pcm} kbps）。コンテンツが極めて単純か、非可逆ソースの可能性があります。",
     summaryTipPeak: "レベルが高すぎ（{tp} dBTP）、クリッピング限界に接近。耳障りです。",
     summaryTipClip: "クリッピングあり（{n} サンプル）。波形頂部が平坦化 — 歪みは修復不可。",
     summaryTipDC: "DCオフセット {dc}%、録音/転送時のアーティファクト。ハイパスフィルターで修正可能。",
@@ -630,79 +660,108 @@ function renderSummary(d) {
   const m = d.metadata;
   const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
 
-  // Collect issues
-  const issues = [];
-  if (tpMax > -1) issues.push('peak');
-  if (q.clipping.samples > 0) issues.push('clip');
-  if (q.dc_offset_pct > 0.1) issues.push('dc');
-  if (q.channel_balance_db > 1) issues.push('balance');
-  if (dr.dr_official < 10) issues.push('dr');
-  if (a.is_suspected_upsampled) issues.push('upsample');
-  if (a.has_sharp_cutoff) issues.push('cutoff');
-  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
+  // --- Layer 1: Authenticity (format truthfulness) ---
+  const authVerdict = a.verdict || (a.is_suspicious ? 'suspicious' : 'clean');
+  const authMap = {
+    clean:     { key: 'summaryAuthClean',     color: 'var(--green)' },
+    ambiguous: { key: 'summaryAuthAmbiguous', color: 'var(--yellow)' },
+    suspicious:{ key: 'summaryAuthSuspicious',color: 'var(--accent2)' },
+  };
+  const authInfo = authMap[authVerdict] || authMap.clean;
 
-  // Classify: authenticity problems vs. quality-only
-  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
+  // --- Layer 2: Quality (audio fidelity) ---
+  const qualityIssues = [];
+  if (tpMax > -1) qualityIssues.push('peak');
+  if (q.clipping.samples > 0) qualityIssues.push('clip');
+  if (q.dc_offset_pct > 0.1) qualityIssues.push('dc');
+  if (q.channel_balance_db > 1) qualityIssues.push('balance');
+  if (dr.dr_official < 10) qualityIssues.push('dr');
 
-  // Verdict sentence — authenticity issues take priority
-  let verdictKey;
-  if (issues.length === 0) {
-    if (d.verdict === 'HIGH_QUALITY') verdictKey = 'summaryVerdictKeep';
-    else verdictKey = 'summaryVerdictOk';
-  } else if (hasAuthIssue) {
-    verdictKey = 'summaryVerdictFake';
-  } else if (d.verdict === 'WARN') {
-    verdictKey = 'summaryVerdictWarn';
+  // Quality grade: Poor (clip/peak), Fair (minor), Good (none)
+  const hasMajor = qualityIssues.includes('clip') || qualityIssues.includes('peak');
+  const hasMinor = qualityIssues.includes('dc') || qualityIssues.includes('balance') || qualityIssues.includes('dr');
+  const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
+  const qualityMap = {
+    good: { key: 'summaryQualityGood', color: 'var(--green)' },
+    fair: { key: 'summaryQualityFair', color: 'var(--yellow)' },
+    poor: { key: 'summaryQualityPoor', color: 'var(--accent2)' },
+  };
+  const qualityInfo = qualityMap[qualityGrade];
+
+  // --- Build HTML ---
+  let html = '';
+
+  // Overall headline
+  let headlineKey;
+  if (authVerdict === 'suspicious') {
+    headlineKey = 'summaryVerdictFake';
+  } else if (authVerdict === 'ambiguous') {
+    headlineKey = 'summaryVerdictWarn';
+  } else if (qualityGrade === 'poor') {
+    headlineKey = 'summaryVerdictIssue';
+  } else if (qualityGrade === 'good' && d.verdict === 'HIGH_QUALITY') {
+    headlineKey = 'summaryVerdictKeep';
+  } else if (qualityGrade === 'good') {
+    headlineKey = 'summaryVerdictOk';
   } else {
-    verdictKey = 'summaryVerdictIssue';
+    headlineKey = 'summaryVerdictWarn';
+  }
+  html += '<div style="font-size:16px;font-weight:700;margin-bottom:14px;color:var(--accent2)">' + t(headlineKey) + '</div>';
+
+  // --- Authenticity block ---
+  html += '<div style="margin-bottom:16px">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:6px">' + t('summaryAuthTitle') + '</div>';
+  html += '<div style="font-size:14px;font-weight:600;color:' + authInfo.color + ';margin-bottom:4px">' + t(authInfo.key) + '</div>';
+
+  // Bitrate warning
+  if (m.bitrate_low && m.bitrate_kbps && m.bitrate_pcm_kbps) {
+    let bwMsg = t('summaryBitrateLow');
+    bwMsg = bwMsg.replace('{actual}', m.bitrate_kbps).replace('{pcm}', m.bitrate_pcm_kbps);
+    html += '<div style="font-size:12px;color:var(--yellow);margin-top:4px;padding:6px 10px;background:rgba(255,193,7,0.08);border-radius:4px">' + bwMsg + '</div>';
   }
 
-  let html = '<div style="font-size:16px;font-weight:700;margin-bottom:14px;color:var(--accent2)">' + t(verdictKey) + '</div>';
+  // Auth detail evidence
+  if (a.suspicion_reasons && a.suspicion_reasons.length > 0) {
+    html += '<ul style="margin:6px 0 0 0;padding:0 0 0 18px;line-height:1.7">';
+    for (const reason of a.suspicion_reasons) {
+      html += '<li style="font-size:12px;color:var(--text-dim)">' + reason + '</li>';
+    }
+    html += '</ul>';
+  }
+  html += '</div>';
 
-  if (issues.length === 0) {
-    html += '<div style="padding:10px 0;color:var(--green);font-size:14px">' + t('summaryTipClean') + '</div>';
+  // --- Quality block ---
+  html += '<div>';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:6px">' + t('summaryQualityTitle') + '</div>';
+  html += '<div style="font-size:14px;font-weight:600;color:' + qualityInfo.color + ';margin-bottom:4px">' + t(qualityInfo.key) + '</div>';
+
+  if (qualityIssues.length === 0) {
+    html += '<div style="font-size:12px;color:var(--green);padding:6px 0">' + t('summaryTipClean') + '</div>';
   } else {
     const tipMap = {
       peak: 'summaryTipPeak', clip: 'summaryTipClip', dc: 'summaryTipDC',
-      balance: 'summaryTipBalance', dr: 'summaryTipDR', upsample: 'summaryTipUpsample',
-      cutoff: 'summaryTipCutoff', bitfake: 'summaryTipBitFake'
+      balance: 'summaryTipBalance', dr: 'summaryTipDR'
     };
-
-    // Value substitutions per issue type
     const fmt = {
       tp: tpMax !== null && tpMax !== undefined ? tpMax.toFixed(1) : '—',
       n: q.clipping.samples,
       dc: q.dc_offset_pct.toFixed(2),
       bal: q.channel_balance_db.toFixed(1),
       dr: dr.dr_official,
-      bd: m.bit_depth
     };
     function fillTip(key) {
       let s = t(tipMap[key]);
       s = s.replace('{tp}', fmt.tp).replace('{n}', fmt.n).replace('{dc}', fmt.dc)
-           .replace('{bal}', fmt.bal).replace('{dr}', fmt.dr).replace('{bd}', fmt.bd);
+           .replace('{bal}', fmt.bal).replace('{dr}', fmt.dr);
       return s;
     }
-
-    html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:8px">' + t('summaryDetail') + ':</div>';
-    html += '<ul style="margin:0;padding:0 0 0 18px;line-height:1.8">';
-    for (const issue of issues) {
-      html += '<li style="margin-bottom:6px;font-size:13px;color:var(--text)">' + fillTip(issue) + '</li>';
+    html += '<ul style="margin:6px 0 0 0;padding:0 0 0 18px;line-height:1.7">';
+    for (const issue of qualityIssues) {
+      html += '<li style="margin-bottom:4px;font-size:12px;color:var(--text)">' + fillTip(issue) + '</li>';
     }
     html += '</ul>';
-
-    // Bottom-line suggestion
-    html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(233,69,96,0.08);border-radius:6px;font-size:12px;color:var(--text-dim)">';
-    html += '<strong style="color:var(--accent2)">' + t('summarySuggestion') + ':</strong> ';
-    if (hasAuthIssue) {
-      html += t('summarySuggestionFake');
-    } else if (issues.includes('clip')) {
-      html += t('summarySuggestionClip');
-    } else {
-      html += t('summarySuggestionOther');
-    }
-    html += '</div>';
   }
+  html += '</div>';
 
   document.getElementById('cardSummary').innerHTML = html;
 }
@@ -734,7 +793,7 @@ function renderResults(d) {
     [t('channels'), m.channels + ' ' + t('ch')],
     [t('duration'), fmtDuration(m.duration_s)],
     [t('fileSize'), formatFileSize(m.file_size_bytes)],
-    [t('bitrate'), m.bitrate_kbps ? m.bitrate_kbps + ' ' + t('kbps') : 'N/A'],
+    [t('bitrate'), m.bitrate_kbps ? m.bitrate_kbps + ' ' + t('kbps') + (m.bitrate_pcm_kbps ? ' / PCM ' + m.bitrate_pcm_kbps : '') : 'N/A'],
   ];
   document.getElementById('cardInfo').innerHTML = '<div class="info-grid">' +
     infoItems.map(([l,v]) => '<div class="info-item"><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>').join('') +
@@ -1041,7 +1100,7 @@ async function buildHtmlReport(d) {
     row(t('sampleRate'), (m.sample_rate/1000).toFixed(1) + ' kHz') + row(t('bitDepth'), m.bit_depth + ' bit') +
     row(t('channels'), m.channels + ' ch') + row(t('duration'), fmtDuration(m.duration_s)) +
     row(t('fileSize'), formatFileSize(m.file_size_bytes)) +
-    (m.bitrate_kbps ? row(t('bitrate'), m.bitrate_kbps + ' kbps') : '') + `</table>`;
+    (m.bitrate_kbps ? row(t('bitrate'), m.bitrate_kbps + ' kbps' + (m.bitrate_pcm_kbps ? ' / PCM ' + m.bitrate_pcm_kbps + ' kbps' : '')) : '') + `</table>`;
 
   const qTable = `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:8px 0">` +
     mRow(t('clipping'), q.clipping.samples > 0 ? q.clipping.samples + ' ' + t('samples') : t('clean'), q.clipping.samples > 0 ? 'red' : 'green') +
@@ -1095,36 +1154,66 @@ async function buildHtmlReport(d) {
 function buildSummaryHtml(d) {
   const q = d.quality, l = d.loudness, dr = d.dynamic_range, a = d.authenticity, m = d.metadata;
   const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
-  const issues = [];
-  if (tpMax > -1) issues.push('peak');
-  if (q.clipping.samples > 0) issues.push('clip');
-  if (q.dc_offset_pct > 0.1) issues.push('dc');
-  if (q.channel_balance_db > 1) issues.push('balance');
-  if (dr.dr_official < 10) issues.push('dr');
-  if (a.is_suspected_upsampled) issues.push('upsample');
-  if (a.has_sharp_cutoff) issues.push('cutoff');
-  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
-  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
 
-  let verdictKey;
-  if (issues.length === 0) verdictKey = d.verdict === 'HIGH_QUALITY' ? 'summaryVerdictKeep' : 'summaryVerdictOk';
-  else if (hasAuthIssue) verdictKey = 'summaryVerdictFake';
-  else if (d.verdict === 'WARN') verdictKey = 'summaryVerdictWarn';
-  else verdictKey = 'summaryVerdictIssue';
+  // Authenticity verdict
+  const authVerdict = a.verdict || (a.is_suspicious ? 'suspicious' : 'clean');
+  const authMap = {
+    clean: { key: 'summaryAuthClean', color: '#2e7d32' },
+    ambiguous: { key: 'summaryAuthAmbiguous', color: '#d4a017' },
+    suspicious: { key: 'summaryAuthSuspicious', color: '#e94560' },
+  };
+  const authInfo = authMap[authVerdict] || authMap.clean;
 
-  let h = `<div style="font-size:16px;font-weight:700;color:#e94560;margin-bottom:12px">${t(verdictKey)}</div>`;
-  if (issues.length === 0) {
-    h += `<p style="color:#2e7d32">${t('summaryTipClean')}</p>`;
-  } else {
-    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR', upsample:'summaryTipUpsample', cutoff:'summaryTipCutoff', bitfake:'summaryTipBitFake' };
-    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official, bd:m.bit_depth };
-    const fillTip = (key) => { let s = t(tipMap[key]); return s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr).replace('{bd}',fmt.bd); };
-    h += '<ul style="margin:8px 0;padding-left:20px;line-height:1.8">';
-    for (const issue of issues) h += `<li>${fillTip(issue)}</li>`;
-    h += '</ul>';
-    const sug = hasAuthIssue ? t('summarySuggestionFake') : issues.includes('clip') ? t('summarySuggestionClip') : t('summarySuggestionOther');
-    h += `<div style="margin-top:10px;padding:10px 14px;background:#fff3f5;border-radius:6px;font-size:13px"><strong>${t('summarySuggestion')}:</strong> ${sug}</div>`;
+  // Quality grade
+  const qIssues = [];
+  if (tpMax > -1) qIssues.push('peak');
+  if (q.clipping.samples > 0) qIssues.push('clip');
+  if (q.dc_offset_pct > 0.1) qIssues.push('dc');
+  if (q.channel_balance_db > 1) qIssues.push('balance');
+  if (dr.dr_official < 10) qIssues.push('dr');
+  const hasMajor = qIssues.includes('clip') || qIssues.includes('peak');
+  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr');
+  const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
+  const qualityMap = {
+    good: { key: 'summaryQualityGood', color: '#2e7d32' },
+    fair: { key: 'summaryQualityFair', color: '#d4a017' },
+    poor: { key: 'summaryQualityPoor', color: '#e94560' },
+  };
+  const qualityInfo = qualityMap[qualityGrade];
+
+  let h = '';
+
+  // Authenticity
+  h += `<div style="margin-bottom:16px">`;
+  h += `<div style="font-size:13px;font-weight:600;color:#888;margin-bottom:4px">${t('summaryAuthTitle')}</div>`;
+  h += `<div style="font-size:14px;font-weight:600;color:${authInfo.color};margin-bottom:4px">${t(authInfo.key)}</div>`;
+  if (m.bitrate_low && m.bitrate_kbps && m.bitrate_pcm_kbps) {
+    let bwMsg = t('summaryBitrateLow').replace('{actual}', m.bitrate_kbps).replace('{pcm}', m.bitrate_pcm_kbps);
+    h += `<div style="font-size:12px;color:#d4a017;margin-top:4px;padding:6px 10px;background:#fff8e1;border-radius:4px">${bwMsg}</div>`;
   }
+  if (a.suspicion_reasons && a.suspicion_reasons.length > 0) {
+    h += '<ul style="margin:6px 0 0 0;padding-left:20px;line-height:1.7">';
+    for (const reason of a.suspicion_reasons) h += `<li style="font-size:12px;color:#666">${reason}</li>`;
+    h += '</ul>';
+  }
+  h += '</div>';
+
+  // Quality
+  h += `<div>`;
+  h += `<div style="font-size:13px;font-weight:600;color:#888;margin-bottom:4px">${t('summaryQualityTitle')}</div>`;
+  h += `<div style="font-size:14px;font-weight:600;color:${qualityInfo.color};margin-bottom:4px">${t(qualityInfo.key)}</div>`;
+  if (qIssues.length === 0) {
+    h += `<p style="color:#2e7d32;font-size:13px">${t('summaryTipClean')}</p>`;
+  } else {
+    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
+    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
+    const fillTip = (key) => { let s = t(tipMap[key]); return s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr); };
+    h += '<ul style="margin:6px 0 0 0;padding-left:20px;line-height:1.7">';
+    for (const issue of qIssues) h += `<li style="font-size:12px">${fillTip(issue)}</li>`;
+    h += '</ul>';
+  }
+  h += '</div>';
+
   return h;
 }
 
@@ -1143,32 +1232,44 @@ function buildTextReport(d) {
   L.push(`## Verdict: ${verdictMap[d.verdict] || d.verdict}`);
   L.push('');
 
-  const issues = [];
-  if (tpMax > -1) issues.push('peak');
-  if (q.clipping.samples > 0) issues.push('clip');
-  if (q.dc_offset_pct > 0.1) issues.push('dc');
-  if (q.channel_balance_db > 1) issues.push('balance');
-  if (dr.dr_official < 10) issues.push('dr');
-  if (a.is_suspected_upsampled) issues.push('upsample');
-  if (a.has_sharp_cutoff) issues.push('cutoff');
-  if (!a.low_bits_active && m.bit_depth >= 24) issues.push('bitfake');
-  const hasAuthIssue = issues.includes('upsample') || issues.includes('cutoff') || issues.includes('bitfake');
+  // Authenticity layer
+  const authVerdict = a.verdict || (a.is_suspicious ? 'suspicious' : 'clean');
+  const authKeyMap = { clean:'summaryAuthClean', ambiguous:'summaryAuthAmbiguous', suspicious:'summaryAuthSuspicious' };
+  L.push('## ' + t('summaryAuthTitle'));
+  L.push(t(authKeyMap[authVerdict] || 'summaryAuthClean'));
+  if (m.bitrate_low && m.bitrate_kbps && m.bitrate_pcm_kbps) {
+    let bwMsg = t('summaryBitrateLow').replace('{actual}', m.bitrate_kbps).replace('{pcm}', m.bitrate_pcm_kbps);
+    L.push('- ' + bwMsg);
+  }
+  if (a.suspicion_reasons && a.suspicion_reasons.length > 0) {
+    for (const reason of a.suspicion_reasons) L.push('- ' + reason);
+  }
+  L.push('');
 
-  L.push('## Summary & Recommendation');
-  if (issues.length === 0) {
-    L.push(t('summaryTipClean'));
+  // Quality layer
+  const qIssues = [];
+  if (tpMax > -1) qIssues.push('peak');
+  if (q.clipping.samples > 0) qIssues.push('clip');
+  if (q.dc_offset_pct > 0.1) qIssues.push('dc');
+  if (q.channel_balance_db > 1) qIssues.push('balance');
+  if (dr.dr_official < 10) qIssues.push('dr');
+  const hasMajor = qIssues.includes('clip') || qIssues.includes('peak');
+  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr');
+  const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
+  const qKeyMap = { good:'summaryQualityGood', fair:'summaryQualityFair', poor:'summaryQualityPoor' };
+
+  L.push('## ' + t('summaryQualityTitle'));
+  L.push(t(qKeyMap[qualityGrade]));
+  if (qIssues.length === 0) {
+    L.push('- ' + t('summaryTipClean'));
   } else {
-    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR', upsample:'summaryTipUpsample', cutoff:'summaryTipCutoff', bitfake:'summaryTipBitFake' };
-    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official, bd:m.bit_depth };
-    L.push('');
-    for (const issue of issues) {
+    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
+    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
+    for (const issue of qIssues) {
       let s = t(tipMap[issue]);
-      s = s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr).replace('{bd}',fmt.bd);
+      s = s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr);
       L.push('- ' + s);
     }
-    const sug = hasAuthIssue ? t('summarySuggestionFake') : issues.includes('clip') ? t('summarySuggestionClip') : t('summarySuggestionOther');
-    L.push('');
-    L.push('**' + t('summarySuggestion') + ':** ' + sug);
   }
   L.push('');
 
@@ -1180,7 +1281,7 @@ function buildTextReport(d) {
   L.push(`- ${t('channels')}: ${m.channels} ch`);
   L.push(`- ${t('duration')}: ${fmtDuration(m.duration_s)}`);
   L.push(`- ${t('fileSize')}: ${formatFileSize(m.file_size_bytes)}`);
-  if (m.bitrate_kbps) L.push(`- ${t('bitrate')}: ${m.bitrate_kbps} kbps`);
+  if (m.bitrate_kbps) L.push(`- ${t('bitrate')}: ${m.bitrate_kbps} kbps` + (m.bitrate_pcm_kbps ? ` / PCM ${m.bitrate_pcm_kbps} kbps` : ''));
   L.push('');
 
   L.push('## Quality Analysis');

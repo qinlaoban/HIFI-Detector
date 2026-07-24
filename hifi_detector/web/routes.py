@@ -95,11 +95,15 @@ def analyze_audio(file: UploadFile = File(...)):
     tp_issue = tp_max > -0.1
     dr_bad = dr.dr_official < 10
     dc_issue = quality.dc_offset_pct > 0.1
-    auth_issue = authenticity.is_suspicious and authenticity.overall_confidence > 0.6
+    auth_susp = authenticity.verdict == "suspicious"
+    auth_ambig = authenticity.verdict == "ambiguous"
 
-    if clip or tp_issue or dr_bad or auth_issue:
+    # Priority: irrecoverable damage (clip) > authenticity > quality
+    if clip or auth_susp:
         verdict = "ISSUES"
-    elif dc_issue or authenticity.is_suspicious:
+    elif tp_issue or dr_bad or auth_ambig:
+        verdict = "WARN"
+    elif dc_issue:
         verdict = "WARN"
     elif dr.dr_official >= 14:
         verdict = "HIGH_QUALITY"
@@ -120,6 +124,8 @@ def analyze_audio(file: UploadFile = File(...)):
             "file_size_mb": meta.file_size_mb,
             "file_size_bytes": meta.file_size_bytes,
             "bitrate_kbps": meta.bitrate_kbps,
+            "bitrate_pcm_kbps": meta.bitrate_pcm_kbps,
+            "bitrate_low": meta.bitrate_low,
         },
         "quality": {
             "clipping": {
@@ -148,6 +154,7 @@ def analyze_audio(file: UploadFile = File(...)):
             "boundary_risk": dr.boundary_risk,
         },
         "authenticity": {
+            "verdict": authenticity.verdict,
             "is_suspicious": authenticity.is_suspicious,
             "overall_confidence": authenticity.overall_confidence,
             "cutoff_freq_hz": authenticity.cutoff_freq_hz,

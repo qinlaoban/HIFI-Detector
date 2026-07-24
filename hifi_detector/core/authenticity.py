@@ -68,6 +68,7 @@ class AuthenticityReport:
     is_suspicious: bool
     suspicion_reasons: list[str] = field(default_factory=list)
     overall_confidence: float = 0.0
+    verdict: str = "clean"  # "clean" | "ambiguous" | "suspicious"
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +120,14 @@ def analyze_authenticity(audio: AudioData) -> AuthenticityReport:
 
     is_suspicious = len(reasons) > 0
 
+    # Three-tier verdict for the frontend
+    if not is_suspicious:
+        verdict = "clean"
+    elif confidence < 0.6:
+        verdict = "ambiguous"
+    else:
+        verdict = "suspicious"
+
     return AuthenticityReport(
         cutoff_freq_hz=round(cutoff_freq, 1) if cutoff_freq else None,
         cutoff_suspected_codec=cutoff_codec,
@@ -133,6 +142,7 @@ def analyze_authenticity(audio: AudioData) -> AuthenticityReport:
         is_suspicious=is_suspicious,
         suspicion_reasons=reasons,
         overall_confidence=round(confidence, 3),
+        verdict=verdict,
     )
 
 
