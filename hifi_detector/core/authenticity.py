@@ -155,11 +155,13 @@ def _detect_spectral_cutoff(
 ) -> tuple[float | None, str | None, bool, float]:
     """Detect unnatural spectral cutoff characteristic of lossy codecs.
 
-    Approach:
-      1. Use Welch's method (averaged windowed FFT) for a robust spectrum.
-      2. Compute gradient in dB/kHz — independent of FFT resolution.
-      3. A codec cutoff shows as >200 dB/kHz drop, typically in the 15-21 kHz range.
-      4. Real audio has gradual roll-off (<50 dB/kHz); lossy codecs are surgical.
+    Approach (multi-frame, inspired by audiocheckr best practices):
+      1. Sample N frames evenly spaced across the track to avoid being
+         fooled by silent intros, fade-outs, or atypical passages.
+      2. Compute Welch PSD on each frame, take the median spectrum.
+      3. Compute gradient in dB/kHz — independent of FFT resolution.
+      4. A codec cutoff shows as >120 dB/kHz drop in the 14–21 kHz range.
+      5. Real audio has gradual roll-off; lossy codecs are surgical.
 
     Returns:
         (cutoff_freq_hz, codec_name, has_sharp_cutoff, confidence)
@@ -167,23 +169,70 @@ def _detect_spectral_cutoff(
     if sr < 32000:
         return None, None, False, 0.0
 
-    # Use Welch's method: windowed, overlapped FFT segments for robust spectrum
-    n_per_seg = min(4096, samples.shape[1])
-    freqs, psd = signal.welch(
-        samples[0], fs=sr, nperseg=n_per_seg,
-        window="hann", noverlap=n_per_seg // 2,
-        scaling="density"
-    )
-    # Average across channels if stereo
-    if samples.shape[0] > 1:
-        _, psd_r = signal.welch(
-            samples[1], fs=sr, nperseg=n_per_seg,
+    n_total = samples.shape[1]
+    n_per_seg = min(4096, n_total)
+    if n_per_seg < 256:
+        return None, None, False, 0.0
+
+    # --- Multi-frame sampling: pick frames from the LOUDEST sections ---
+    # Evenly-spaced sampling can miss content in dynamic audio.
+    # Instead: scan short blocks, pick the N loudest ones.
+    n_frames = 5
+    frame_len = n_per_seg
+    # Scan the track in frame_len blocks, compute RMS for each
+    n_blocks = n_total // frame_len
+    if n_blocks < 1:
+        return None, None, False, 0.0
+    block_rms = np.array([
+        np.sqrt(np.mean(samples[0, i * frame_len:(i + 1) * frame_len] ** 2))
+        for i in range(n_blocks)
+    ])
+    # Pick top N loudest blocks (ensures we analyze actual content)
+    top_indices = np.argsort(block_rms)[::-1][:n_frames]
+    frame_positions = sorted(int(i) * frame_len for i in top_indices)
+
+    # Compute Welch PSD for each frame (use first channel for speed)
+    all_psd = []
+    for pos in frame_positions:
+        frame = samples[0, pos: pos + frame_len]
+        if len(frame) < n_per_seg:
+            continue
+        _, psd = signal.welch(
+            frame, fs=sr, nperseg=n_per_seg,
             window="hann", noverlap=n_per_seg // 2,
             scaling="density"
         )
-        psd = (psd + psd_r) / 2
+        all_psd.append(psd)
 
-    mag_db = 10 * np.log10(psd + 1e-30)
+    if not all_psd:
+        return None, None, False, 0.0
+
+    # Average across channels: add second channel if stereo
+    if samples.shape[0] > 1:
+        all_psd_r = []
+        for pos in frame_positions:
+            frame = samples[1, pos: pos + frame_len]
+            if len(frame) < n_per_seg:
+                continue
+            _, psd_r = signal.welch(
+                frame, fs=sr, nperseg=n_per_seg,
+                window="hann", noverlap=n_per_seg // 2,
+                scaling="density"
+            )
+            all_psd_r.append(psd_r)
+        if len(all_psd_r) == len(all_psd):
+            all_psd = [(l + r) / 2 for l, r in zip(all_psd, all_psd_r)]
+
+    # Take median PSD across frames (robust against outliers)
+    psd_stack = np.array(all_psd)
+    median_psd = np.median(psd_stack, axis=0)
+
+    freqs = signal.welch(
+        np.zeros(n_per_seg), fs=sr, nperseg=n_per_seg,
+        window="hann", noverlap=n_per_seg // 2, scaling="density"
+    )[0]
+
+    mag_db = 10 * np.log10(median_psd + 1e-30)
 
     # Focus on 10-22 kHz (wider range to detect the plateau and slope)
     lo_idx = int(10000 * n_per_seg / sr)
@@ -331,12 +380,14 @@ def _detect_upsampling(
 ) -> tuple[bool, float, float, int | None]:
     """Detect if a high-sample-rate file is upsampled from a lower rate.
 
-    Key heuristics:
+    Key heuristics (revised to reduce false positives per audiocheckr findings):
       - If sr > 48 kHz, check if there is meaningful energy above 22.05 kHz.
-        True hi-res content has musical energy extending into ultrasonics.
-      - If the HF energy ratio is < 0.1% of total, it's suspicious.
-      - The "floor" shape in the ultrasonic region can indicate interpolation:
-        interpolation noise looks flat and constant, while real content has peaks.
+      - Low HF energy ratio alone is NOT sufficient to flag upsampling.
+        Genuine hi-res recordings (classical, acoustic) may have very little
+        ultrasonic content. Require corroborating evidence:
+          (a) A sharp brickwall cutoff near 22.05 kHz (CD Nyquist), OR
+          (b) Extremely low energy (< 0.01%) combined with flat interpolation noise
+      - Source rate hint considers both 44100 and 48000.
 
     Returns:
         (is_suspected, hf_energy_ratio, hf_energy_db, source_rate_hint)
@@ -344,15 +395,36 @@ def _detect_upsampling(
     if sr <= 48000:
         return False, 0.0, -999.0, None
 
-    n_fft = min(samples.shape[1], sr * 4)
-    n_fft = 2 ** int(np.log2(n_fft))
-    freqs = rfftfreq(n_fft, 1 / sr)
+    # --- Multi-frame FFT for robust spectral estimate ---
+    n_total = samples.shape[1]
+    n_frames = min(5, max(1, n_total // (sr * 2)))  # up to 5 x 2-second frames
+    frame_len = min(n_total, sr * 2)
+    frame_len = 2 ** int(np.log2(frame_len))
 
-    mags = []
-    for ch in range(samples.shape[0]):
-        spec = np.abs(rfft(samples[ch][:n_fft]))
-        mags.append(spec)
-    mag_db = 20 * np.log10(np.mean(mags, axis=0) + 1e-12)
+    # Pick frame positions evenly spaced (skip first/last 10%)
+    margin = n_total // 10
+    if n_total - 2 * margin < frame_len:
+        frame_positions = [0]
+    else:
+        usable = n_total - 2 * margin - frame_len
+        step = usable // max(1, n_frames - 1) if n_frames > 1 else 0
+        frame_positions = [margin + i * step for i in range(n_frames)]
+
+    all_mag_db = []
+    freqs = rfftfreq(frame_len, 1 / sr)
+    for pos in frame_positions:
+        frame = samples[0, pos: pos + frame_len]
+        if len(frame) < frame_len:
+            continue
+        spec = np.abs(rfft(frame))
+        mag_db = 20 * np.log10(spec + 1e-12)
+        all_mag_db.append(mag_db)
+
+    if not all_mag_db:
+        return False, 0.0, -999.0, None
+
+    # Median magnitude across frames
+    mag_db = np.median(np.array(all_mag_db), axis=0)
 
     # Energy above CD Nyquist (22.05 kHz)
     hf_mask = freqs > CD_NYQUIST
@@ -368,52 +440,79 @@ def _detect_upsampling(
     # Max dB in HF region
     max_hf_db = float(np.max(mag_db[hf_mask])) if hf_energy > 0 else -999.0
 
-    # Determine if upsampled
-    # Threshold: < 0.05% energy above CD Nyquist → highly suspicious
-    #            < 0.5% → worth noting
-    #            Sound that cuts off sharply at 22.05 kHz is almost certainly
-    #            CD-quality content upsampled to a higher rate.
+    # --- Check for brickwall cutoff near CD Nyquist ---
+    # This is the hallmark of a CD-sourced file upsampled to hi-res
+    # Look for a sharp drop (>100 dB/kHz) in the 20-24 kHz region
+    has_brickwall_at_cd = False
+    lo_idx = int(20000 * frame_len / sr)
+    hi_idx = min(int(24000 * frame_len / sr), len(mag_db))
+    if hi_idx - lo_idx > 5:
+        band_db = mag_db[lo_idx:hi_idx]
+        # Smooth lightly
+        win = min(5, len(band_db) - 2)
+        if win >= 3 and win % 2 == 0:
+            win -= 1
+        if win >= 3:
+            smooth = signal.savgol_filter(band_db, win, 2)
+            freq_bin_hz = float(sr / frame_len)
+            gradient = np.diff(smooth) / (freq_bin_hz / 1000.0)
+            if len(gradient) > 0:
+                steepest = abs(float(np.min(gradient)))
+                if steepest > 100:  # sharp brickwall near CD Nyquist
+                    has_brickwall_at_cd = True
 
-    # Also check the noise floor slope in the ultrasonic band
-    # Interpolation noise has a characteristic pattern
+    # --- Noise floor slope in ultrasonic band ---
     hf_indices = np.where(hf_mask)[0]
+    slope = 0.0
     if len(hf_indices) > 10:
         hf_mags = mag_linear[hf_indices]
         hf_freqs = freqs[hf_indices]
-        # Fit a line to log-log to detect interpolation signature
-        # Interpolation noise often has a high slope (rapid roll-off)
         valid = hf_mags > 1e-12
         if np.sum(valid) >= 5:
             x = np.log10(hf_freqs[valid])
             y = np.log10(hf_mags[valid])
             slope, _ = np.polyfit(x, y, 1)
-        else:
-            slope = 0.0
-    else:
-        slope = 0.0
 
-    # Combine heuristics
+    # --- Combine heuristics (more conservative to reduce false positives) ---
     is_up = False
-    src_hint = None
+    src_hint = _guess_source_rate(sr)
 
-    if hf_ratio < 0.0005:  # < 0.05% energy above 22.05 kHz
-        is_up = True
-        # Guess source rate based on sample rate family
-        if sr == 176400 or sr == 88200:
+    if has_brickwall_at_cd:
+        # Strong evidence: brickwall at CD Nyquist + low HF energy
+        if hf_ratio < 0.005:  # < 0.5% energy above 22.05 kHz
+            is_up = True
+            # Brickwall at CD Nyquist strongly implies 44100 Hz source
             src_hint = 44100
-        elif sr == 192000 or sr == 96000:
-            src_hint = 48000
-        else:
-            # Check which base rate divides evenly
-            for candidate in (44100, 48000):
-                if sr % candidate == 0:
-                    src_hint = candidate
-                    break
-    elif hf_ratio < 0.005 and slope < -2.5:  # rapid decay + low energy
+    elif hf_ratio < 0.0001:  # < 0.01% — extremely low, almost certainly upsampled
+        # Require very flat interpolation noise (slope near 0 or very negative)
+        if abs(slope) > 2.0 or slope > -0.5:
+            is_up = True
+    elif hf_ratio < 0.001 and slope < -3.0:
+        # Low energy + rapid decay in ultrasonic band
         is_up = True
-        src_hint = 44100 if sr % 44100 == 0 else 48000
+
+    if not is_up:
+        src_hint = None
 
     return is_up, hf_ratio, max_hf_db, src_hint
+
+
+def _guess_source_rate(sr: int) -> int | None:
+    """Guess the most likely source sample rate for an upsampled file.
+
+    Considers both 44100 and 48000 base rates.
+    """
+    if sr == 176400 or sr == 88200:
+        return 44100
+    elif sr == 192000 or sr == 96000:
+        # 96kHz could be from 48kHz or 44.1kHz — prefer 44100 as it's
+        # the more common CD-derived upsample source
+        return 44100 if sr % 44100 == 0 else 48000
+    else:
+        for candidate in (44100, 48000):
+            if sr % candidate == 0:
+                return candidate
+    return 48000
 
 
 # ---------------------------------------------------------------------------

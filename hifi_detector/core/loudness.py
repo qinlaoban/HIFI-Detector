@@ -143,12 +143,18 @@ def _integrated_lufs(mono_kweighted: np.ndarray, sample_rate: int) -> float:
 
 
 def _loudness_range(mono_kweighted: np.ndarray, sample_rate: int) -> float:
-    """Calculate Loudness Range (LRA) per EBU R128 / BS.1770.
+    """Calculate Loudness Range (LRA) per EBU Tech 3342 / EBU R128.
 
-    Uses 3s blocks with 75% overlap (step = 750ms).
+    Algorithm (MathWorks reference implementation of EBU Tech 3342):
+      1. 3-second blocks with 2.9s overlap (step = 0.1s)
+      2. Compute short-term loudness (LUFS) for each block
+      3. Absolute gate: remove blocks < -70 LUFS
+      4. Convert gated loudness back to linear power, take mean
+      5. Relative gate: -20 LU below that mean (in linear)
+      6. LRA = 95th percentile - 10th percentile of surviving blocks
     """
     block_size = int(3.0 * sample_rate)
-    step_size = int(0.75 * sample_rate)  # 75% overlap
+    step_size = max(1, int(0.1 * sample_rate))  # 96.7% overlap per EBU Tech 3342
     if block_size < 1 or step_size < 1:
         return 0.0
 
@@ -165,17 +171,30 @@ def _loudness_range(mono_kweighted: np.ndarray, sample_rate: int) -> float:
     windows = sliding_window_view(mono_kweighted, block_size)[::step_size]
     powers = np.mean(windows ** 2, axis=1)
 
+    # Short-term loudness in LUFS
     st_loudness = np.full(n_blocks, -120.0)
     mask = powers > 0
     st_loudness[mask] = -0.691 + 10 * np.log10(powers[mask])
 
-    # Gate at -20 LU relative to mean, then take 10th/95th percentile
-    mean_l = np.mean(st_loudness)
-    gated = st_loudness[st_loudness > (mean_l - 20)]
-    if len(gated) < 2:
+    # Step 1: Absolute gate at -70 LUFS (per EBU Tech 3342)
+    abs_gated = st_loudness[st_loudness >= -70.0]
+    if len(abs_gated) < 2:
         return 0.0
 
-    sorted_l = np.sort(gated)
+    # Step 2: Convert abs-gated loudness back to linear power, take mean
+    abs_gated_linear = 10 ** (abs_gated / 10.0)
+    mean_linear = float(np.mean(abs_gated_linear))
+    if mean_linear <= 0:
+        return 0.0
+
+    # Step 3: Relative gate at -20 LU below the abs-gated mean
+    relative_threshold_lufs = -20.0 + 10 * np.log10(mean_linear)
+    rel_gated = abs_gated[abs_gated >= relative_threshold_lufs]
+    if len(rel_gated) < 2:
+        return 0.0
+
+    # Step 4: 10th and 95th percentiles
+    sorted_l = np.sort(rel_gated)
     p10_idx = max(0, int(len(sorted_l) * 0.1))
     p95_idx = min(len(sorted_l) - 1, int(len(sorted_l) * 0.95))
 

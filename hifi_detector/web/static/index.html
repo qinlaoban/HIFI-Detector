@@ -110,7 +110,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   .info-grid{grid-template-columns:repeat(2,1fr)}
   .metric-row{flex-wrap:wrap}
   .metric-row .name{width:100%}
+  .batch-table th, .batch-table td{padding:6px 8px;font-size:11px}
 }
+
+/* Batch mode */
+.batch-section{display:none;padding-bottom:60px}
+.batch-section.active{display:block}
+.batch-summary{display:flex;gap:12px;justify-content:center;align-items:center;margin:20px 0;flex-wrap:wrap}
+.batch-summary .stat{padding:8px 16px;border-radius:var(--radius);font-weight:700;font-size:14px}
+.batch-summary .stat.ok{background:#1b5e20;color:#69f0ae}
+.batch-summary .stat.warn{background:#4a3800;color:var(--yellow)}
+.batch-summary .stat.issues{background:#4a0000;color:var(--red)}
+.batch-summary .stat.error{background:#333;color:#999}
+.batch-progress{display:none;padding:20px 0;text-align:center}
+.batch-progress.active{display:block}
+.batch-progress .bar-outer{height:6px;background:var(--border);border-radius:3px;margin:10px 0;overflow:hidden}
+.batch-progress .bar-inner{height:100%;background:var(--accent2);border-radius:3px;transition:width .3s}
+.batch-progress .progress-text{font-size:13px;color:var(--text-dim);margin-bottom:4px}
+.batch-table{width:100%;border-collapse:collapse;font-size:13px}
+.batch-table th{text-align:left;padding:10px 12px;background:var(--surface2);border-bottom:2px solid var(--border);color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.batch-table td{padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:.2s}
+.batch-table tr:hover td{background:rgba(255,255,255,.03)}
+.batch-table tr.selected td{background:rgba(83,52,131,.15);border-color:var(--accent)}
+.verdict-badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.5px}
+.verdict-badge.HIGH_QUALITY,.verdict-badge.CLEAN{background:#1b5e20;color:#69f0ae}
+.verdict-badge.WARN{background:#4a3800;color:var(--yellow)}
+.verdict-badge.ISSUES{background:#4a0000;color:var(--red)}
+.verdict-badge.ERROR{background:#333;color:#999}
+.batch-filename{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -134,7 +161,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="icon">&#x1F3B5;</div>
       <div class="title" data-i18n="dropTitle">Drop an audio file here</div>
       <div class="hint" data-i18n="dropHint">or click to browse — FLAC, WAV, MP3, AIFF, OGG, M4A, APE</div>
-      <input type="file" id="fileInput" accept=".flac,.wav,.mp3,.aiff,.aif,.ogg,.opus,.m4a,.alac,.ape,.wv">
+      <input type="file" id="fileInput" accept=".flac,.wav,.mp3,.aiff,.aif,.ogg,.opus,.m4a,.alac,.ape,.wv" multiple>
+    </div>
+  </div>
+
+  <!-- Batch Progress -->
+  <div class="batch-progress" id="batchProgress">
+    <div class="spinner"></div>
+    <div class="progress-text" id="batchProgressText">Analyzing 1/10...</div>
+    <div class="bar-outer"><div class="bar-inner" id="batchProgressBar" style="width:0%"></div></div>
+    <div class="msg" id="batchProgressFile" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
+  </div>
+
+  <!-- Batch Results -->
+  <div class="batch-section" id="batchSection">
+    <div style="text-align:center;margin-bottom:8px">
+      <button class="btn" onclick="resetToUpload()">&#x2190; <span data-i18n="analyzeAnother">Analyze Another File</span></button>
+    </div>
+    <div class="batch-summary" id="batchSummary"></div>
+    <div class="card">
+      <div class="card-hdr open" data-i18n="batchResults">BATCH RESULTS</div>
+      <div class="card-body show" style="padding:0;overflow-x:auto">
+        <table class="batch-table" id="batchTable">
+          <thead><tr id="batchTableHead"></tr></thead>
+          <tbody id="batchTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -151,7 +203,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="results" id="results">
 
     <div style="text-align:center;margin-bottom:8px">
-      <button class="btn" onclick="resetToUpload()">&#x2190; <span data-i18n="analyzeAnother">Analyze Another File</span></button>
+      <button class="btn" id="singleBackBtn" onclick="resetToUpload()">&#x2190; <span data-i18n="analyzeAnother">Analyze Another File</span></button>
+      <button class="btn" id="backToBatchBtn" onclick="backToBatch()" style="display:none">&#x2190; <span data-i18n="backToBatch">Back to Batch Results</span></button>
     </div>
 
     <div class="verdict" id="verdictBanner"></div>
@@ -295,7 +348,7 @@ const I18N = {
     summaryVerdictIssue: "Audio quality issues — the file is real, but poorly mastered.",
     // Two-layer summary
     summaryAuthTitle: "Authenticity",
-    summaryAuthClean: "Passed — no signs of tampering.",
+    summaryAuthClean: "No forgery detected — format appears consistent with stated parameters.",
     summaryAuthAmbiguous: "Uncertain — borderline results, cannot rule out lossy origin.",
     summaryAuthSuspicious: "Suspicious — the file likely originated from a lossy source.",
     summaryQualityTitle: "Quality",
@@ -327,6 +380,21 @@ const I18N = {
     rptDownload: "Download Report",
     rptGen: "Generating...",
     rptGenFail: "Report generation failed. Please try again.",
+    // Batch mode
+    batchResults: "BATCH RESULTS",
+    batchProgress: "Analyzing {i}/{total}...",
+    batchTooMany: "Too many files. Maximum {n} files at once.",
+    batchOk: "OK",
+    batchWarn: "Warn",
+    batchIssues: "Issues",
+    batchError: "Error",
+    batchColFile: "File",
+    batchColFormat: "Format",
+    batchColDR: "DR",
+    batchColTP: "True Peak",
+    batchColAuth: "Auth",
+    batchColVerdict: "Verdict",
+    backToBatch: "Back to Batch Results",
   },
   zh: {
     dropTitle: "拖拽音频文件到此处",
@@ -404,7 +472,7 @@ const I18N = {
     summaryVerdictIssue: "音质有问题 — 文件是真的，但处理不佳。",
     // Two-layer summary
     summaryAuthTitle: "真伪验证",
-    summaryAuthClean: "通过 — 未发现伪造迹象。",
+    summaryAuthClean: "未发现伪造痕迹 — 格式与声明参数一致。",
     summaryAuthAmbiguous: "不确定 — 处于判断边界，不排除有损来源。",
     summaryAuthSuspicious: "可疑 — 文件可能源自有损格式。",
     summaryQualityTitle: "音质评估",
@@ -436,6 +504,21 @@ const I18N = {
     rptDownload: "下载报告",
     rptGen: "生成中...",
     rptGenFail: "报告生成失败，请重试。",
+    // Batch mode
+    batchResults: "批量结果",
+    batchProgress: "分析中 {i}/{total}...",
+    batchTooMany: "文件过多，最多同时分析 {n} 个文件。",
+    batchOk: "正常",
+    batchWarn: "警告",
+    batchIssues: "问题",
+    batchError: "错误",
+    batchColFile: "文件",
+    batchColFormat: "格式",
+    batchColDR: "动态",
+    batchColTP: "真峰值",
+    batchColAuth: "真伪",
+    batchColVerdict: "判定",
+    backToBatch: "返回批量结果",
   },
   ja: {
     dropTitle: "音声ファイルをドロップ",
@@ -513,7 +596,7 @@ const I18N = {
     summaryVerdictIssue: "音質に問題あり — ファイル自体は本物ですが、マスタリング不良。",
     // Two-layer summary
     summaryAuthTitle: "真正性検証",
-    summaryAuthClean: "合格 — 改ざんの痕跡はありません。",
+    summaryAuthClean: "改ざん痕跡なし — 形式は申告パラメータと一致。",
     summaryAuthAmbiguous: "不確定 — 境界値の結果、非可逆ソースの可能性あり。",
     summaryAuthSuspicious: "疑わしい — 非可逆圧縮からの変換の可能性が高いです。",
     summaryQualityTitle: "品質評価",
@@ -545,6 +628,21 @@ const I18N = {
     rptDownload: "レポートをダウンロード",
     rptGen: "生成中...",
     rptGenFail: "レポート生成に失敗しました。もう一度お試しください。",
+    // Batch mode
+    batchResults: "一括結果",
+    batchProgress: "分析中 {i}/{total}...",
+    batchTooMany: "ファイル数が多すぎます。最大{n}ファイルまでです。",
+    batchOk: "正常",
+    batchWarn: "警告",
+    batchIssues: "問題",
+    batchError: "エラー",
+    batchColFile: "ファイル",
+    batchColFormat: "フォーマット",
+    batchColDR: "DR",
+    batchColTP: "True Peak",
+    batchColAuth: "真正性",
+    batchColVerdict: "判定",
+    backToBatch: "一括結果に戻る",
   }
 };
 
@@ -552,8 +650,13 @@ let lang = 'en';
 let fileId = null;
 let currentData = null;
 let currentFile = null;
+let fromBatchIndex = -1;  // track if we navigated from batch results
 
 function t(key) { return I18N[lang][key] || key; }
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 function formatFileSize(bytes) {
   if (!bytes || bytes < 0) return '0 MB';
@@ -576,7 +679,12 @@ function setLang(l) {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     el.textContent = t(el.dataset.i18n);
   });
-  if (currentData) renderResults(currentData);
+  // Re-render batch results if visible
+  if (document.getElementById('batchSection').classList.contains('active') && batchResults.length > 0) {
+    renderBatchResults();
+  } else if (currentData) {
+    renderResults(currentData);
+  }
 }
 
 // Load saved language preference, default to 'en'
@@ -604,10 +712,20 @@ dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-ove
 dropzone.addEventListener('drop', e => {
   e.preventDefault();
   dropzone.classList.remove('drag-over');
-  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  const files = Array.from(e.dataTransfer.files);
+  if (files.length > 1) {
+    handleBatch(files);
+  } else if (files.length === 1) {
+    handleFile(files[0]);
+  }
 });
 fileInput.addEventListener('change', () => {
-  if (fileInput.files.length) handleFile(fileInput.files[0]);
+  const files = Array.from(fileInput.files);
+  if (files.length > 1) {
+    handleBatch(files);
+  } else if (files.length === 1) {
+    handleFile(files[0]);
+  }
 });
 
 async function handleFile(file) {
@@ -620,11 +738,16 @@ async function handleFile(file) {
 
   // Save file for playback
   currentFile = file;
+  fromBatchIndex = -1;
 
   document.getElementById('uploadSection').style.display = 'none';
   document.getElementById('results').classList.remove('active');
+  document.getElementById('batchSection').classList.remove('active');
   document.getElementById('errorBox').style.display = 'none';
   document.getElementById('progress').classList.add('active');
+  // Show single back button, hide batch back button
+  document.getElementById('singleBackBtn').style.display = '';
+  document.getElementById('backToBatchBtn').style.display = 'none';
 
   const form = new FormData();
   form.append('file', file);
@@ -658,6 +781,178 @@ function showError(msg) {
   const box = document.getElementById('errorBox');
   box.textContent = msg;
   box.style.display = 'block';
+}
+
+// ====== BATCH MODE ======
+const MAX_BATCH_FILES = 30;
+const MAX_FILE_SIZE = 600 * 1024 * 1024; // 600 MB
+let batchResults = [];  // store batch results for click-to-detail
+
+async function handleBatch(files) {
+  const allowed = ['flac','wav','mp3','aiff','aif','ogg','opus','m4a','alac','ape','wv'];
+  const audioFiles = files.filter(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    return allowed.includes(ext);
+  });
+
+  if (audioFiles.length === 0) {
+    showError('No supported audio files found.');
+    return;
+  }
+  if (audioFiles.length > MAX_BATCH_FILES) {
+    showError(t('batchTooMany').replace('{n}', MAX_BATCH_FILES));
+    return;
+  }
+
+  // Switch to batch progress UI
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('batchSection').classList.remove('active');
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('batchProgress').classList.add('active');
+
+  batchResults = [];
+  const total = audioFiles.length;
+
+  // Process sequentially to avoid OOM
+  for (let i = 0; i < total; i++) {
+    const file = audioFiles[i];
+    document.getElementById('batchProgressText').textContent = t('batchProgress').replace('{i}', i+1).replace('{total}', total);
+    document.getElementById('batchProgressBar').style.width = ((i / total) * 100) + '%';
+    document.getElementById('batchProgressFile').textContent = file.name;
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await fetch('/api/analyze', { method: 'POST', body: form });
+      const data = await resp.json();
+      if (!resp.ok) {
+        batchResults.push({ filename: file.name, error: data.detail || 'Failed', file: file });
+      } else {
+        data.file = file;
+        batchResults.push(data);
+      }
+    } catch (e) {
+      batchResults.push({ filename: file.name, error: e.message, file: file });
+    }
+  }
+
+  document.getElementById('batchProgressBar').style.width = '100%';
+  document.getElementById('batchProgress').classList.remove('active');
+  renderBatchResults();
+}
+
+function renderBatchResults() {
+  const counts = { ok: 0, warn: 0, issues: 0, error: 0 };
+  batchResults.forEach(r => {
+    if (r.error) counts.error++;
+    else if (r.verdict === 'ISSUES') counts.issues++;
+    else if (r.verdict === 'WARN') counts.warn++;
+    else counts.ok++;
+  });
+
+  // Summary badges
+  const summaryEl = document.getElementById('batchSummary');
+  summaryEl.innerHTML =
+    '<span class="stat ok">' + t('batchOk') + ': ' + counts.ok + '</span>' +
+    '<span class="stat warn">' + t('batchWarn') + ': ' + counts.warn + '</span>' +
+    '<span class="stat issues">' + t('batchIssues') + ': ' + counts.issues + '</span>' +
+    (counts.error > 0 ? '<span class="stat error">' + t('batchError') + ': ' + counts.error + '</span>' : '');
+
+  // Table header
+  const headEl = document.getElementById('batchTableHead');
+  headEl.innerHTML =
+    '<th>#</th>' +
+    '<th>' + t('batchColFile') + '</th>' +
+    '<th>' + t('batchColFormat') + '</th>' +
+    '<th>' + t('batchColDR') + '</th>' +
+    '<th>' + t('batchColTP') + '</th>' +
+    '<th>' + t('batchColAuth') + '</th>' +
+    '<th>' + t('batchColVerdict') + '</th>';
+
+  // Table body
+  const bodyEl = document.getElementById('batchTableBody');
+  bodyEl.innerHTML = '';
+  batchResults.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.dataset.index = i;
+    tr.onclick = () => showBatchDetail(i);
+
+    if (r.error) {
+      tr.innerHTML =
+        '<td>' + (i+1) + '</td>' +
+        '<td class="batch-filename" title="' + escapeHtml(r.filename) + '">' + escapeHtml(r.filename) + '</td>' +
+        '<td colspan="4" style="color:#999">' + escapeHtml(r.error) + '</td>' +
+        '<td><span class="verdict-badge ERROR">ERROR</span></td>';
+    } else {
+      const m = r.metadata;
+      const l = r.loudness;
+      const dr = r.dynamic_range;
+      const a = r.authenticity;
+      const tpMax = l.true_peak_r_dbtp !== null ? Math.max(l.true_peak_l_dbtp, l.true_peak_r_dbtp) : l.true_peak_l_dbtp;
+      const fmt = (m.format || '?') + ' ' + (m.sample_rate/1000).toFixed(1) + 'kHz';
+      const authLabel = a.verdict === 'suspicious' ? t('suspect') : (a.verdict === 'ambiguous' ? t('warn') : t('ok'));
+      const authColor = a.verdict === 'suspicious' ? 'red' : (a.verdict === 'ambiguous' ? 'yellow' : 'green');
+
+      tr.innerHTML =
+        '<td>' + (i+1) + '</td>' +
+        '<td class="batch-filename" title="' + escapeHtml(r.filename) + '">' + escapeHtml(r.filename) + '</td>' +
+        '<td>' + fmt + '</td>' +
+        '<td>DR' + dr.dr_official + '</td>' +
+        '<td style="color:' + (tpMax > 0 ? 'var(--red)' : tpMax > -1 ? 'var(--yellow)' : 'var(--text-dim)') + '">' + tpMax.toFixed(1) + '</td>' +
+        '<td style="color:var(--' + authColor + ')">' + authLabel + '</td>' +
+        '<td><span class="verdict-badge ' + r.verdict + '">' + r.verdict.replace('_',' ') + '</span></td>';
+    }
+    bodyEl.appendChild(tr);
+  });
+
+  document.getElementById('batchSection').classList.add('active');
+}
+
+function showBatchDetail(index) {
+  const r = batchResults[index];
+  if (r.error) return;
+
+  // Highlight selected row
+  document.querySelectorAll('#batchTableBody tr').forEach(tr => tr.classList.remove('selected'));
+  const selectedRow = document.querySelector('#batchTableBody tr[data-index="' + index + '"]');
+  if (selectedRow) selectedRow.classList.add('selected');
+
+  // Switch to single-file detail view
+  document.getElementById('batchSection').classList.remove('active');
+  currentFile = r.file;
+  currentData = r;
+  fileId = r.file_id;
+  fromBatchIndex = index;
+
+  // Show "back to batch" button, hide "analyze another"
+  document.getElementById('backToBatchBtn').style.display = '';
+  document.getElementById('singleBackBtn').style.display = 'none';
+
+  // Set up audio playback
+  if (currentFile) {
+    const audio = document.getElementById('audioPlayer');
+    audio.src = URL.createObjectURL(currentFile);
+    document.getElementById('audioCard').style.display = '';
+  }
+
+  renderResults(r);
+  document.getElementById('results').classList.add('active');
+}
+
+function backToBatch() {
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('audioCard').style.display = 'none';
+  document.getElementById('reportCard').style.display = 'none';
+  if (currentFile) {
+    const audio = document.getElementById('audioPlayer');
+    if (audio.src) URL.revokeObjectURL(audio.src);
+    audio.src = '';
+  }
+  Plotly.purge('specChart');
+  Plotly.purge('waveChart');
+  fromBatchIndex = -1;
+  document.getElementById('batchSection').classList.add('active');
 }
 
 // ====== SUMMARY ======
@@ -1038,13 +1333,19 @@ function switchTab(tab) {
 
 function resetToUpload() {
   document.getElementById('results').classList.remove('active');
+  document.getElementById('batchSection').classList.remove('active');
+  document.getElementById('batchProgress').classList.remove('active');
   document.getElementById('uploadSection').style.display = '';
   document.getElementById('errorBox').style.display = 'none';
   document.getElementById('audioCard').style.display = 'none';
   document.getElementById('reportCard').style.display = 'none';
+  // Reset button state
+  document.getElementById('singleBackBtn').style.display = '';
+  document.getElementById('backToBatchBtn').style.display = 'none';
   fileInput.value = '';
   fileId = null;
   currentData = null;
+  fromBatchIndex = -1;
   // Revoke audio blob URL to free memory
   if (currentFile) {
     const audio = document.getElementById('audioPlayer');

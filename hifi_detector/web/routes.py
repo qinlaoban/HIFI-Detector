@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
+from typing import List
 
 from ..core.audio_io import read_audio, AudioData
 from ..core.metadata import extract_metadata
@@ -20,8 +21,11 @@ from ..core.authenticity import analyze_authenticity
 
 router = APIRouter(prefix="/api")
 
-# Maximum upload size: 500 MB
-MAX_UPLOAD_SIZE = 500 * 1024 * 1024
+# Maximum upload size: 600 MB
+MAX_UPLOAD_SIZE = 600 * 1024 * 1024
+
+# Batch limits
+MAX_BATCH_FILES = 30
 
 # LRU cache: file_id -> (decoded AudioData, file_path)
 # Limited to 20 entries to prevent memory/disk exhaustion
@@ -46,24 +50,42 @@ def _file_id(file_path: Path) -> str:
     return h
 
 
-@router.post("/analyze")
-def analyze_audio(file: UploadFile = File(...)):
-    """Upload and analyze an audio file. Returns full analysis report."""
-    if not file.filename:
-        raise HTTPException(400, "No file provided")
+def _build_verdict(quality, loudness, dr, authenticity) -> str:
+    """Compute tiered verdict from analysis results."""
+    clip = quality.clip_samples > 0
+    tp_max = max(loudness.true_peak_db_l, loudness.true_peak_db_r or -999)
+    tp_severe = tp_max > 0.5
+    tp_notice = 0 < tp_max <= 0.5
+    dr_severe = dr.dr_official < 5
+    dr_notice = 5 <= dr.dr_official < 7
+    dc_issue = quality.dc_offset_pct > 0.1
+    auth_susp = authenticity.verdict == "suspicious"
+    auth_ambig = authenticity.verdict == "ambiguous"
 
-    # Check extension
-    ext = Path(file.filename).suffix.lower()
+    if clip or auth_susp:
+        return "ISSUES"
+    elif tp_severe or dr_severe or auth_ambig:
+        return "WARN"
+    elif dc_issue or tp_notice or dr_notice:
+        return "WARN"
+    elif dr.dr_official >= 14:
+        return "HIGH_QUALITY"
+    else:
+        return "CLEAN"
+
+
+def _run_analysis(file: UploadFile) -> dict:
+    """Run full analysis on a single uploaded file. Returns result dict or error."""
+    filename = file.filename or "unknown"
+    ext = Path(filename).suffix.lower()
     allowed = {".flac", ".wav", ".mp3", ".aiff", ".aif", ".ogg", ".opus", ".m4a", ".alac", ".ape", ".wv"}
     if ext not in allowed:
-        raise HTTPException(400, f"Unsupported format: {ext}")
+        return {"filename": filename, "error": f"Unsupported format: {ext}"}
 
-    # Read content with size limit
     content = file.file.read()
     if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(413, f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)} MB)")
+        return {"filename": filename, "error": f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)} MB)"}
 
-    # Save to temp file
     suffix = ext or ".tmp"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
@@ -75,9 +97,8 @@ def analyze_audio(file: UploadFile = File(...)):
         audio = read_audio(tmp_path)
     except Exception as e:
         tmp_path.unlink(missing_ok=True)
-        raise HTTPException(400, f"Failed to read audio file: {e}")
+        return {"filename": filename, "error": str(e)}
 
-    # Cache decoded AudioData so spectrogram/waveform don't re-decode
     _cache_put(fid, audio, tmp_path)
 
     try:
@@ -87,34 +108,13 @@ def analyze_audio(file: UploadFile = File(...)):
         dr = analyze_dynamic_range(audio)
         authenticity = analyze_authenticity(audio)
     except Exception as e:
-        raise HTTPException(500, f"Analysis failed: {e}")
+        return {"filename": filename, "error": f"Analysis failed: {e}"}
 
-    # Verdict — tiered thresholds based on audiophile / industry consensus
-    clip = quality.clip_samples > 0
-    tp_max = max(loudness.true_peak_db_l, loudness.true_peak_db_r or -999)
-    tp_severe = tp_max > 0.5        # audible clipping / inter-sample overs
-    tp_notice = 0 < tp_max <= 0.5   # streaming headroom risk, not audible on lossless
-    dr_severe = dr.dr_official < 6   # truly poor dynamics (loudness war victim)
-    dr_notice = 6 <= dr.dr_official < 8  # genre-dependent: normal for pop/rock, low for classical
-    dc_issue = quality.dc_offset_pct > 0.1
-    auth_susp = authenticity.verdict == "suspicious"
-    auth_ambig = authenticity.verdict == "ambiguous"
-
-    # Priority: irrecoverable damage (clip) > authenticity > quality
-    if clip or auth_susp:
-        verdict = "ISSUES"
-    elif tp_severe or dr_severe or auth_ambig:
-        verdict = "WARN"
-    elif dc_issue or tp_notice or dr_notice:
-        verdict = "WARN"
-    elif dr.dr_official >= 14:
-        verdict = "HIGH_QUALITY"
-    else:
-        verdict = "CLEAN"
+    verdict = _build_verdict(quality, loudness, dr, authenticity)
 
     return {
         "file_id": fid,
-        "filename": file.filename,
+        "filename": filename,
         "verdict": verdict,
         "metadata": {
             "format": meta.format,
@@ -172,6 +172,33 @@ def analyze_audio(file: UploadFile = File(...)):
             "suspicion_reasons": authenticity.suspicion_reasons,
         },
     }
+
+
+@router.post("/analyze")
+def analyze_audio(file: UploadFile = File(...)):
+    """Upload and analyze an audio file. Returns full analysis report."""
+    if not file.filename:
+        raise HTTPException(400, "No file provided")
+
+    result = _run_analysis(file)
+    if "error" in result:
+        status = 413 if "too large" in result["error"] else 400
+        raise HTTPException(status, result["error"])
+    return result
+
+
+@router.post("/analyze/batch")
+def analyze_batch(files: List[UploadFile] = File(...)):
+    """Upload and analyze multiple audio files. Returns list of reports."""
+    if not files:
+        raise HTTPException(400, "No files provided")
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(400, f"Too many files (max {MAX_BATCH_FILES})")
+
+    results = []
+    for f in files:
+        results.append(_run_analysis(f))
+    return {"total": len(results), "results": results}
 
 
 @router.get("/spectrogram/{file_id}")
