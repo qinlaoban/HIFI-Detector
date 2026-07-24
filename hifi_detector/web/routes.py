@@ -89,11 +89,13 @@ def analyze_audio(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(500, f"Analysis failed: {e}")
 
-    # Verdict
+    # Verdict — tiered thresholds based on audiophile / industry consensus
     clip = quality.clip_samples > 0
     tp_max = max(loudness.true_peak_db_l, loudness.true_peak_db_r or -999)
-    tp_issue = tp_max > -0.1
-    dr_bad = dr.dr_official < 10
+    tp_severe = tp_max > 0.5        # audible clipping / inter-sample overs
+    tp_notice = 0 < tp_max <= 0.5   # streaming headroom risk, not audible on lossless
+    dr_severe = dr.dr_official < 6   # truly poor dynamics (loudness war victim)
+    dr_notice = 6 <= dr.dr_official < 8  # genre-dependent: normal for pop/rock, low for classical
     dc_issue = quality.dc_offset_pct > 0.1
     auth_susp = authenticity.verdict == "suspicious"
     auth_ambig = authenticity.verdict == "ambiguous"
@@ -101,9 +103,9 @@ def analyze_audio(file: UploadFile = File(...)):
     # Priority: irrecoverable damage (clip) > authenticity > quality
     if clip or auth_susp:
         verdict = "ISSUES"
-    elif tp_issue or dr_bad or auth_ambig:
+    elif tp_severe or dr_severe or auth_ambig:
         verdict = "WARN"
-    elif dc_issue:
+    elif dc_issue or tp_notice or dr_notice:
         verdict = "WARN"
     elif dr.dr_official >= 14:
         verdict = "HIGH_QUALITY"

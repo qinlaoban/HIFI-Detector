@@ -303,11 +303,14 @@ const I18N = {
     summaryQualityFair: "Fair — minor issues, still listenable.",
     summaryQualityPoor: "Poor — audible defects, not recommended for collection.",
     summaryBitrateLow: "Bitrate unusually low ({actual} kbps, PCM equivalent {pcm} kbps). File may be very sparse or originated from a lossy source.",
-    summaryTipPeak: "Level too high ({tp} dBTP), near the clipping limit. Sounds harsh.",
+    summaryTipPeak: "True Peak {tp} dBTP exceeds 0 dBFS — audible clipping risk. File may be damaged.",
+    summaryTipPeakNotice: "True Peak {tp} dBTP in 0–0.5 range. Fine for lossless playback; may clip when transcoded to MP3/AAC.",
     summaryTipClip: "Clipped ({n} samples). Waveform tops are flattened — distortion is irreversible.",
     summaryTipDC: "DC offset {dc}%, a recording/transfer artifact. Fixable with a high-pass filter.",
     summaryTipBalance: "Channel imbalance ({bal} dB), left/right levels differ significantly.",
-    summaryTipDR: "Dynamic range only DR {dr}, low. Over-compressed, sounds flat.",
+    summaryTipDR: "Dynamic range only DR {dr} — severely compressed, sounds flat and lifeless.",
+    summaryTipDRNotice: "Dynamic range DR {dr} — moderate compression. Normal for modern pop/rock/EDM; low for classical/jazz.",
+    summaryQualityGenreNote: "Note: the above metrics are genre-dependent. DR 6–8 is typical for EDM/pop/rock, while classical/jazz recordings are expected to reach DR 12+.",
     summaryTipUpsample: "Likely upsampled. Not real Hi-Res — stretched from CD quality.",
     summaryTipCutoff: "Frequency cutoff detected. Originated from a lossy source (e.g. MP3).",
     summaryTipBitFake: "Lower bits inactive. Claims {bd}-bit but likely padded from 16-bit.",
@@ -409,11 +412,14 @@ const I18N = {
     summaryQualityFair: "一般 — 有轻微问题，仍可听。",
     summaryQualityPoor: "差 — 存在可闻缺陷，不建议收藏。",
     summaryBitrateLow: "码率异常低（{actual} kbps，PCM 等效 {pcm} kbps）。文件可能内容极简或源自有损格式。",
-    summaryTipPeak: "电平过高（{tp} dBTP），接近削波上限，听感偏冲。",
+    summaryTipPeak: "真峰值 {tp} dBTP 超过 0 dBFS — 存在可闻削波风险，文件可能已损坏。",
+    summaryTipPeakNotice: "真峰值 {tp} dBTP 处于 0–0.5 范围。无损回放无问题；转码为 MP3/AAC 时可能削波。",
     summaryTipClip: "已削波（{n} 处样本），波形顶部被切平，失真不可逆。",
     summaryTipDC: "直流偏移 {dc}%，录音/转录引入，可用高通滤波器修复。",
     summaryTipBalance: "声道不平衡（{bal} dB），左右电平差异明显。",
-    summaryTipDR: "动态范围仅 DR {dr}，偏低。压缩过度，听感平淡。",
+    summaryTipDR: "动态范围仅 DR {dr} — 严重压缩，听感扁平无层次。",
+    summaryTipDRNotice: "动态范围 DR {dr} — 中等压缩。现代流行/摇滚/电子正常范围；古典/爵士偏低。",
+    summaryQualityGenreNote: "注：以上指标受音乐风格影响。电子/流行/摇滚 DR 6–8 属正常范围，古典/爵士建议 DR 12+。",
     summaryTipUpsample: "疑似升频。非真 Hi-Res，是 CD 音质拉伸而来。",
     summaryTipCutoff: "频谱截断。源自有损格式（如 MP3）转无损。",
     summaryTipBitFake: "低位未激活。声称 {bd}-bit，疑似从 16-bit 填充。",
@@ -515,11 +521,14 @@ const I18N = {
     summaryQualityFair: "普通 — 軽微な問題あり、聴取可能。",
     summaryQualityPoor: "不良 — 可聴レベルの欠陥、コレクション非推奨。",
     summaryBitrateLow: "ビットレートが異常に低い（{actual} kbps、PCM換算 {pcm} kbps）。コンテンツが極めて単純か、非可逆ソースの可能性があります。",
-    summaryTipPeak: "レベルが高すぎ（{tp} dBTP）、クリッピング限界に接近。耳障りです。",
+    summaryTipPeak: "True Peak {tp} dBTP が 0 dBFS 超 — 可聴クリッピングのリスク。ファイルが破損している可能性があります。",
+    summaryTipPeakNotice: "True Peak {tp} dBTP（0–0.5 範囲）。ロスレス再生では問題なし。MP3/AAC 変換時にクリッピングの可能性あり。",
     summaryTipClip: "クリッピングあり（{n} サンプル）。波形頂部が平坦化 — 歪みは修復不可。",
     summaryTipDC: "DCオフセット {dc}%、録音/転送時のアーティファクト。ハイパスフィルターで修正可能。",
     summaryTipBalance: "チャンネル不均衡（{bal} dB）、左右レベルに明らかな差。",
-    summaryTipDR: "ダイナミックレンジ DR {dr} のみ、低い。過圧縮、平坦に聞こえます。",
+    summaryTipDR: "ダイナミックレンジ DR {dr} のみ — 重度の圧縮、平坦で生気のないサウンド。",
+    summaryTipDRNotice: "ダイナミックレンジ DR {dr} — 中程度の圧縮。現代のポップ/ロック/EDMでは正常範囲。クラシック/ジャズでは低め。",
+    summaryQualityGenreNote: "注：上記指標は音楽ジャンルに依存します。EDM/ポップ/ロックは DR 6–8 が標準的、クラシック/ジャズは DR 12+ が期待されます。",
     summaryTipUpsample: "アップサンプリングの疑い。真のハイレゾではなく、CD品質からの引き伸ばし。",
     summaryTipCutoff: "周波数カットオフ検出。非可逆圧縮（MP3等）からの変換。",
     summaryTipBitFake: "下位ビット不活性。{bd}-bitと表示も16-bitからのパディングの疑い。",
@@ -670,16 +679,22 @@ function renderSummary(d) {
   const authInfo = authMap[authVerdict] || authMap.clean;
 
   // --- Layer 2: Quality (audio fidelity) ---
+  // Severe issues (audible defects)
   const qualityIssues = [];
-  if (tpMax > -1) qualityIssues.push('peak');
+  if (tpMax > 0.5) qualityIssues.push('peak');        // > 0.5 dBTP: audible clipping risk
   if (q.clipping.samples > 0) qualityIssues.push('clip');
   if (q.dc_offset_pct > 0.1) qualityIssues.push('dc');
   if (q.channel_balance_db > 1) qualityIssues.push('balance');
-  if (dr.dr_official < 10) qualityIssues.push('dr');
+  if (dr.dr_official < 6) qualityIssues.push('dr');    // < 6: truly poor (loudness war)
 
-  // Quality grade: Poor (clip/peak), Fair (minor), Good (none)
+  // Fair-level notices (not defects — genre-dependent or streaming-only concerns)
+  const fairNotices = [];
+  if (tpMax > 0 && tpMax <= 0.5) fairNotices.push('peak_notice');
+  if (dr.dr_official >= 6 && dr.dr_official < 8) fairNotices.push('dr_notice');
+
+  // Quality grade: Poor (clip/severe peak/severe dr), Fair (minor + notices), Good (none)
   const hasMajor = qualityIssues.includes('clip') || qualityIssues.includes('peak');
-  const hasMinor = qualityIssues.includes('dc') || qualityIssues.includes('balance') || qualityIssues.includes('dr');
+  const hasMinor = qualityIssues.includes('dc') || qualityIssues.includes('balance') || qualityIssues.includes('dr') || fairNotices.length > 0;
   const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
   const qualityMap = {
     good: { key: 'summaryQualityGood', color: 'var(--green)' },
@@ -735,32 +750,58 @@ function renderSummary(d) {
   html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:6px">' + t('summaryQualityTitle') + '</div>';
   html += '<div style="font-size:14px;font-weight:600;color:' + qualityInfo.color + ';margin-bottom:4px">' + t(qualityInfo.key) + '</div>';
 
-  if (qualityIssues.length === 0) {
+  if (qualityIssues.length === 0 && fairNotices.length === 0) {
     html += '<div style="font-size:12px;color:var(--green);padding:6px 0">' + t('summaryTipClean') + '</div>';
   } else {
-    const tipMap = {
-      peak: 'summaryTipPeak', clip: 'summaryTipClip', dc: 'summaryTipDC',
-      balance: 'summaryTipBalance', dr: 'summaryTipDR'
-    };
-    const fmt = {
-      tp: tpMax !== null && tpMax !== undefined ? tpMax.toFixed(1) : '—',
-      n: q.clipping.samples,
-      dc: q.dc_offset_pct.toFixed(2),
-      bal: q.channel_balance_db.toFixed(1),
-      dr: dr.dr_official,
-    };
-    function fillTip(key) {
-      let s = t(tipMap[key]);
-      s = s.replace('{tp}', fmt.tp).replace('{n}', fmt.n).replace('{dc}', fmt.dc)
-           .replace('{bal}', fmt.bal).replace('{dr}', fmt.dr);
-      return s;
+    // Severe issues
+    if (qualityIssues.length > 0) {
+      const tipMap = {
+        peak: 'summaryTipPeak', clip: 'summaryTipClip', dc: 'summaryTipDC',
+        balance: 'summaryTipBalance', dr: 'summaryTipDR'
+      };
+      const fmt = {
+        tp: tpMax !== null && tpMax !== undefined ? tpMax.toFixed(1) : '—',
+        n: q.clipping.samples,
+        dc: q.dc_offset_pct.toFixed(2),
+        bal: q.channel_balance_db.toFixed(1),
+        dr: dr.dr_official,
+      };
+      function fillTip(key) {
+        let s = t(tipMap[key]);
+        s = s.replace('{tp}', fmt.tp).replace('{n}', fmt.n).replace('{dc}', fmt.dc)
+             .replace('{bal}', fmt.bal).replace('{dr}', fmt.dr);
+        return s;
+      }
+      html += '<ul style="margin:6px 0 0 0;padding:0 0 0 18px;line-height:1.7">';
+      for (const issue of qualityIssues) {
+        html += '<li style="margin-bottom:4px;font-size:12px;color:var(--text)">' + fillTip(issue) + '</li>';
+      }
+      html += '</ul>';
     }
-    html += '<ul style="margin:6px 0 0 0;padding:0 0 0 18px;line-height:1.7">';
-    for (const issue of qualityIssues) {
-      html += '<li style="margin-bottom:4px;font-size:12px;color:var(--text)">' + fillTip(issue) + '</li>';
+    // Fair-level notices (not defects)
+    if (fairNotices.length > 0) {
+      const noticeMap = {
+        peak_notice: 'summaryTipPeakNotice',
+        dr_notice: 'summaryTipDRNotice',
+      };
+      const fmt2 = {
+        tp: tpMax !== null && tpMax !== undefined ? tpMax.toFixed(1) : '—',
+        dr: dr.dr_official,
+      };
+      function fillNotice(key) {
+        let s = t(noticeMap[key]);
+        s = s.replace('{tp}', fmt2.tp).replace('{dr}', fmt2.dr);
+        return s;
+      }
+      html += '<ul style="margin:4px 0 0 0;padding:0 0 0 18px;line-height:1.7">';
+      for (const n of fairNotices) {
+        html += '<li style="margin-bottom:4px;font-size:11px;color:var(--text-dim)">' + fillNotice(n) + '</li>';
+      }
+      html += '</ul>';
     }
-    html += '</ul>';
   }
+  // Genre caveat
+  html += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px">' + t('summaryQualityGenreNote') + '</div>';
   html += '</div>';
 
   document.getElementById('cardSummary').innerHTML = html;
@@ -1164,15 +1205,18 @@ function buildSummaryHtml(d) {
   };
   const authInfo = authMap[authVerdict] || authMap.clean;
 
-  // Quality grade
+  // Quality grade — tiered thresholds (severe vs notice)
   const qIssues = [];
-  if (tpMax > -1) qIssues.push('peak');
+  if (tpMax > 0.5) qIssues.push('peak');
   if (q.clipping.samples > 0) qIssues.push('clip');
   if (q.dc_offset_pct > 0.1) qIssues.push('dc');
   if (q.channel_balance_db > 1) qIssues.push('balance');
-  if (dr.dr_official < 10) qIssues.push('dr');
+  if (dr.dr_official < 6) qIssues.push('dr');
+  const fairNotices = [];
+  if (tpMax > 0 && tpMax <= 0.5) fairNotices.push('peak_notice');
+  if (dr.dr_official >= 6 && dr.dr_official < 8) fairNotices.push('dr_notice');
   const hasMajor = qIssues.includes('clip') || qIssues.includes('peak');
-  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr');
+  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr') || fairNotices.length > 0;
   const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
   const qualityMap = {
     good: { key: 'summaryQualityGood', color: '#2e7d32' },
@@ -1202,16 +1246,27 @@ function buildSummaryHtml(d) {
   h += `<div>`;
   h += `<div style="font-size:13px;font-weight:600;color:#888;margin-bottom:4px">${t('summaryQualityTitle')}</div>`;
   h += `<div style="font-size:14px;font-weight:600;color:${qualityInfo.color};margin-bottom:4px">${t(qualityInfo.key)}</div>`;
-  if (qIssues.length === 0) {
+  if (qIssues.length === 0 && fairNotices.length === 0) {
     h += `<p style="color:#2e7d32;font-size:13px">${t('summaryTipClean')}</p>`;
   } else {
-    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
-    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
-    const fillTip = (key) => { let s = t(tipMap[key]); return s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr); };
-    h += '<ul style="margin:6px 0 0 0;padding-left:20px;line-height:1.7">';
-    for (const issue of qIssues) h += `<li style="font-size:12px">${fillTip(issue)}</li>`;
-    h += '</ul>';
+    if (qIssues.length > 0) {
+      const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
+      const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
+      const fillTip = (key) => { let s = t(tipMap[key]); return s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr); };
+      h += '<ul style="margin:6px 0 0 0;padding-left:20px;line-height:1.7">';
+      for (const issue of qIssues) h += `<li style="font-size:12px">${fillTip(issue)}</li>`;
+      h += '</ul>';
+    }
+    if (fairNotices.length > 0) {
+      const noticeMap = { peak_notice:'summaryTipPeakNotice', dr_notice:'summaryTipDRNotice' };
+      const fmt2 = { tp: tpMax!=null?tpMax.toFixed(1):'—', dr:dr.dr_official };
+      const fillNotice = (key) => { let s = t(noticeMap[key]); return s.replace('{tp}',fmt2.tp).replace('{dr}',fmt2.dr); };
+      h += '<ul style="margin:4px 0 0 0;padding-left:20px;line-height:1.7">';
+      for (const n of fairNotices) h += `<li style="font-size:11px;color:#999">${fillNotice(n)}</li>`;
+      h += '</ul>';
+    }
   }
+  h += `<div style="margin-top:8px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:8px">${t('summaryQualityGenreNote')}</div>`;
   h += '</div>';
 
   return h;
@@ -1246,31 +1301,47 @@ function buildTextReport(d) {
   }
   L.push('');
 
-  // Quality layer
+  // Quality layer — tiered thresholds
   const qIssues = [];
-  if (tpMax > -1) qIssues.push('peak');
+  if (tpMax > 0.5) qIssues.push('peak');
   if (q.clipping.samples > 0) qIssues.push('clip');
   if (q.dc_offset_pct > 0.1) qIssues.push('dc');
   if (q.channel_balance_db > 1) qIssues.push('balance');
-  if (dr.dr_official < 10) qIssues.push('dr');
+  if (dr.dr_official < 6) qIssues.push('dr');
+  const fairNotices = [];
+  if (tpMax > 0 && tpMax <= 0.5) fairNotices.push('peak_notice');
+  if (dr.dr_official >= 6 && dr.dr_official < 8) fairNotices.push('dr_notice');
   const hasMajor = qIssues.includes('clip') || qIssues.includes('peak');
-  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr');
+  const hasMinor = qIssues.includes('dc') || qIssues.includes('balance') || qIssues.includes('dr') || fairNotices.length > 0;
   const qualityGrade = hasMajor ? 'poor' : hasMinor ? 'fair' : 'good';
   const qKeyMap = { good:'summaryQualityGood', fair:'summaryQualityFair', poor:'summaryQualityPoor' };
 
   L.push('## ' + t('summaryQualityTitle'));
   L.push(t(qKeyMap[qualityGrade]));
-  if (qIssues.length === 0) {
+  if (qIssues.length === 0 && fairNotices.length === 0) {
     L.push('- ' + t('summaryTipClean'));
   } else {
-    const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
-    const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
-    for (const issue of qIssues) {
-      let s = t(tipMap[issue]);
-      s = s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr);
-      L.push('- ' + s);
+    if (qIssues.length > 0) {
+      const tipMap = { peak:'summaryTipPeak', clip:'summaryTipClip', dc:'summaryTipDC', balance:'summaryTipBalance', dr:'summaryTipDR' };
+      const fmt = { tp: tpMax!=null?tpMax.toFixed(1):'—', n:q.clipping.samples, dc:q.dc_offset_pct.toFixed(2), bal:q.channel_balance_db.toFixed(1), dr:dr.dr_official };
+      for (const issue of qIssues) {
+        let s = t(tipMap[issue]);
+        s = s.replace('{tp}',fmt.tp).replace('{n}',fmt.n).replace('{dc}',fmt.dc).replace('{bal}',fmt.bal).replace('{dr}',fmt.dr);
+        L.push('- ' + s);
+      }
+    }
+    if (fairNotices.length > 0) {
+      const noticeMap = { peak_notice:'summaryTipPeakNotice', dr_notice:'summaryTipDRNotice' };
+      const fmt2 = { tp: tpMax!=null?tpMax.toFixed(1):'—', dr:dr.dr_official };
+      for (const n of fairNotices) {
+        let s = t(noticeMap[n]);
+        s = s.replace('{tp}',fmt2.tp).replace('{dr}',fmt2.dr);
+        L.push('  - ' + s);
+      }
     }
   }
+  L.push('');
+  L.push(t('summaryQualityGenreNote'));
   L.push('');
 
   L.push('## Audio Info');
