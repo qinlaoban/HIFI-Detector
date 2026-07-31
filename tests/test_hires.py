@@ -11,7 +11,9 @@ Run: .venv/bin/python -m unittest discover -s tests -v
 import unittest
 from pathlib import Path
 
-from hifi_detector.core.audio_io import read_audio
+import numpy as np
+
+from hifi_detector.core.audio_io import AudioData, read_audio
 from hifi_detector.core.hires import (
     HiResIssue,
     claims_hires,
@@ -141,6 +143,122 @@ class TestVerifyHiResIntegration(unittest.TestCase):
         # Upsampled file has (near) no ultrasonic content — that's the evidence.
         self.assertLess(rep.hf_energy_ratio, 0.005)
         self.assertTrue(rep.hires_target)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic-signal regression tests for the corrected detection logic
+# ---------------------------------------------------------------------------
+
+def _audio(mono, sr=96000, bits=24, sub="PCM_24"):
+    """Build an in-memory stereo AudioData from a mono signal."""
+    mono = np.clip(np.asarray(mono, dtype=np.float64), -0.95, 0.95)
+    stereo = np.stack([mono, mono])
+    return AudioData(
+        samples=stereo, sample_rate=sr, channels=2,
+        duration_s=len(mono) / sr, bit_depth=bits,
+        format="WAV", subtype=sub, file_path="synthetic",
+    )
+
+
+class TestUpsamplingNoFalsePositives(unittest.TestCase):
+    """P0-1: genuinely dark / band-limited hi-res recordings must NOT be
+    condemned as upsampled fakes. 'Little ultrasonic content' is not evidence —
+    only a brickwall at a plausible source Nyquist is."""
+
+    SR = 96000
+
+    def _n(self):
+        return int(self.SR * 3.0)
+
+    def test_pure_sine_is_genuine(self):
+        t = np.arange(self._n()) / self.SR
+        rep = verify_hires(_audio(0.5 * np.sin(2 * np.pi * 1000 * t)))
+        self.assertEqual(rep.verdict, "genuine_hires")
+        self.assertNotIn("upsampled", [i.kind for i in rep.issues])
+
+    def test_dark_recording_is_genuine(self):
+        # Content lowpassed well below CD Nyquist — like a dark acoustic master.
+        from scipy.signal import butter, filtfilt
+        b, a = butter(4, 18000 / (self.SR / 2), "low")
+        rng = np.random.default_rng(1)
+        dark = filtfilt(b, a, np.cumsum(rng.standard_normal(self._n())))
+        dark = dark / np.max(np.abs(dark)) * 0.5
+        rep = verify_hires(_audio(dark))
+        self.assertEqual(rep.verdict, "genuine_hires")
+        self.assertNotIn("upsampled", [i.kind for i in rep.issues])
+
+    def test_full_bandwidth_is_genuine(self):
+        rng = np.random.default_rng(2)
+        rep = verify_hires(_audio(0.3 * rng.standard_normal(self._n())))
+        self.assertEqual(rep.verdict, "genuine_hires")
+
+
+class TestBrickwallUpsampleDetected(unittest.TestCase):
+    """P0-2: upsamples that leave a brickwall (FFT / cheap resamplers) ARE caught
+    robustly and deterministically."""
+
+    def test_fft_resample_cd_upsample_is_fake(self):
+        from scipy.signal import butter, filtfilt, resample
+        sr_src, sr_dst = 44100, 96000
+        n_src = int(sr_src * 3.0)
+        # Pink (1/f) noise — the realistic spectral shape of music (matches the
+        # bundled test data). Brown noise would be far too red here.
+        rng = np.random.default_rng(3)
+        nfft = 2 ** int(np.ceil(np.log2(n_src)))
+        freqs = np.fft.rfftfreq(nfft, 1 / sr_src)
+        mag = np.zeros_like(freqs)
+        mag[1:] = 1.0 / np.sqrt(freqs[1:])
+        spec = mag * np.exp(1j * rng.uniform(0, 2 * np.pi, len(mag)))
+        pink = np.fft.irfft(spec, n=nfft)[:n_src]
+        # Band-limit to 20 kHz (typical CD mastering), then FFT-resample to 96k.
+        b, a = butter(8, 20000 / (sr_src / 2), "low")
+        src = filtfilt(b, a, pink)
+        src = src / np.max(np.abs(src)) * 0.5
+        up = resample(src, int(len(src) * sr_dst / sr_src))
+        rep = verify_hires(_audio(up, sr=sr_dst))
+        # A steady-state tone lands in the moderate-confidence band; dynamic real
+        # music (bundled file 03) reaches fake_hires. Either way it is DETECTED.
+        self.assertIn(rep.verdict, ("fake_hires", "suspicious"))
+        self.assertIn("upsampled", [i.kind for i in rep.issues])
+
+
+class TestFake24BitRobustness(unittest.TestCase):
+    """Points 3 & 4: level-independent, grid-tolerant fake-24-bit detection."""
+
+    SR = 96000
+
+    def _n(self):
+        return int(self.SR * 2.0)
+
+    def test_zero_padded_32768_is_fake(self):
+        rng = np.random.default_rng(4)
+        v = rng.integers(-30000, 30000, self._n())
+        rep = verify_hires(_audio((v * 256) / 2 ** 23))
+        self.assertEqual(rep.verdict, "fake_hires")
+        self.assertIn("fake_bitdepth", [i.kind for i in rep.issues])
+
+    def test_full_scale_32767_is_fake(self):
+        # Point 4: a /32767 (full-scale) encoder must not evade detection.
+        rng = np.random.default_rng(5)
+        v = rng.integers(-30000, 30000, self._n())
+        rep = verify_hires(_audio(v / 32767))
+        self.assertEqual(rep.verdict, "fake_hires")
+        self.assertIn("fake_bitdepth", [i.kind for i in rep.issues])
+
+    def test_genuine_24bit_is_not_fake(self):
+        rng = np.random.default_rng(6)
+        int24 = rng.integers(-2 ** 22, 2 ** 22, self._n())
+        rep = verify_hires(_audio(int24 / 2 ** 23))
+        self.assertEqual(rep.verdict, "genuine_hires")
+        self.assertNotIn("fake_bitdepth", [i.kind for i in rep.issues])
+
+    def test_unquantized_float_not_misfiring(self):
+        # Point 3: arbitrary float (not on any grid) must not hit the old 0.60
+        # zero-tolerance boundary and be called fake.
+        rng = np.random.default_rng(7)
+        rep = verify_hires(_audio(0.3 * rng.standard_normal(self._n())))
+        self.assertEqual(rep.verdict, "genuine_hires")
+        self.assertNotIn("fake_bitdepth", [i.kind for i in rep.issues])
 
 
 if __name__ == "__main__":

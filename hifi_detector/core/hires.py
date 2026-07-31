@@ -41,11 +41,14 @@ UPSAMPLE_CONFIDENCE = 0.85
 # Downgraded confidence for a weak upsampling hit (ambiguous grey zone).
 UPSAMPLE_WEAK_CONFIDENCE = 0.51  # >= SUSPICIOUS_THRESHOLD, < FAKE_THRESHOLD
 
-# What this detector can and cannot claim. Lossless resampling preserves all
-# information, so it is fundamentally undetectable from PCM content.
+# What this detector can and cannot claim. Upsampling is only detectable when
+# the resampler leaves a spectral brickwall at the source Nyquist; a high-quality
+# polyphase resampler preserves the source band without a wall and is therefore
+# indistinguishable from a genuinely dark recording (information-theoretic limit).
 DETECTION_SCOPE = (
-    "检测范围：上采样、有损转码、假位深。"
-    "无损重采样（如 192k→96k）保留全部信息，无法通过内容识别。"
+    "检测范围：留下频谱砖墙的上采样、有损转码、假位深。"
+    "高质量重采样器（多相 FIR）把 CD 拉到 hi-res 时不留砖墙，"
+    "与本身偏暗的合法录音在内容上无法区分——属信息论极限，无法识别。"
 )
 
 

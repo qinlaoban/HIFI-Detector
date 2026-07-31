@@ -431,20 +431,25 @@ def _detect_upsampling(
     if sr <= 48000:
         return UpsamplingResult()
 
-    # --- Multi-frame FFT for robust spectral estimate ---
+    # --- Multi-frame FFT on the LOUDEST sections ---
+    # Evenly-spaced frames can land in silent intros / fade-outs and end up
+    # measuring the noise floor instead of the signal (which makes hf_ratio
+    # degenerate into "fraction of bins above 22 kHz"). Pick the loudest blocks
+    # so the spectrum reflects real content — same strategy as the cutoff detector.
     n_total = samples.shape[1]
-    n_frames = min(5, max(1, n_total // (sr * 2)))  # up to 5 x 2-second frames
     frame_len = min(n_total, sr * 2)
     frame_len = 2 ** int(np.log2(frame_len))
+    n_blocks = n_total // frame_len
+    if n_blocks < 1:
+        return UpsamplingResult()
 
-    # Pick frame positions evenly spaced (skip first/last 10%)
-    margin = n_total // 10
-    if n_total - 2 * margin < frame_len:
-        frame_positions = [0]
-    else:
-        usable = n_total - 2 * margin - frame_len
-        step = usable // max(1, n_frames - 1) if n_frames > 1 else 0
-        frame_positions = [margin + i * step for i in range(n_frames)]
+    n_frames = min(5, n_blocks)
+    block_rms = np.array([
+        np.sqrt(np.mean(samples[0, i * frame_len:(i + 1) * frame_len] ** 2))
+        for i in range(n_blocks)
+    ])
+    top = np.argsort(block_rms)[::-1][:n_frames]
+    frame_positions = sorted(int(i) * frame_len for i in top)
 
     all_mag_db = []
     freqs = rfftfreq(frame_len, 1 / sr)
@@ -492,41 +497,7 @@ def _detect_upsampling(
     else:
         frame_consistency = 1.0
 
-    # --- Check for brickwall cutoff near CD Nyquist ---
-    # This is the hallmark of a CD-sourced file upsampled to hi-res.
-    # Require BOTH:
-    #   (a) a sharp drop (>100 dB/kHz) in a narrow band around 22.05 kHz, AND
-    #   (b) a sustained level drop (median) from the pre-wall band (19-21.5 kHz)
-    #       to the post-wall band (22.2-24 kHz).
-    # The level-drop test rejects false positives from flat quantization noise,
-    # whose local spikes can look steep but have no real band-level change.
-    has_brickwall_at_cd = False
-    pre_lo = int(19000 * frame_len / sr)
-    pre_hi = int(21500 * frame_len / sr)
-    post_lo = int(22200 * frame_len / sr)
-    post_hi = min(int(24000 * frame_len / sr), len(mag_db))
-    if pre_hi > pre_lo and post_hi > post_lo + 5:
-        pre_level = float(np.median(mag_db[pre_lo:pre_hi]))
-        post_level = float(np.median(mag_db[post_lo:post_hi]))
-        level_drop = pre_level - post_level
-
-        wall_lo = int(21600 * frame_len / sr)
-        wall_hi = min(int(22400 * frame_len / sr), len(mag_db))
-        if wall_hi - wall_lo > 5 and level_drop > 30.0:
-            band_db = mag_db[wall_lo:wall_hi]
-            win = min(5, len(band_db) - 2)
-            if win >= 3 and win % 2 == 0:
-                win -= 1
-            if win >= 3:
-                smooth = signal.savgol_filter(band_db, win, 2)
-                freq_bin_hz = float(sr / frame_len)
-                gradient = np.diff(smooth) / (freq_bin_hz / 1000.0)
-                if len(gradient) > 0:
-                    steepest = abs(float(np.min(gradient)))
-                    if steepest > 100:  # sharp brickwall near CD Nyquist
-                        has_brickwall_at_cd = True
-
-    # --- Noise floor slope in ultrasonic band ---
+    # --- Noise floor slope in ultrasonic band (diagnostic only, NOT a trigger) ---
     hf_indices = np.where(hf_mask)[0]
     slope = 0.0
     if len(hf_indices) > 10:
@@ -538,29 +509,43 @@ def _detect_upsampling(
             y = np.log10(hf_mags[valid])
             slope, _ = np.polyfit(x, y, 1)
 
-    # --- Combine heuristics (more conservative to reduce false positives) ---
+    # --- Brickwall detection at plausible SOURCE Nyquist frequencies ---
+    # The defining signature of an upsample is a sharp spectral wall located at
+    # the *source* rate's Nyquist frequency: real content right below it and a
+    # large, sustained empty band right above it. We test standard source Nyquist
+    # candidates rather than assuming CD (44.1 kHz), so this also catches e.g.
+    # 22.05 kHz -> 192 kHz upsamples (whose wall sits at 11.025 kHz).
+    #
+    # Critically, "little ultrasonic content" is NOT evidence by itself — a
+    # genuinely dark / band-limited master (classical, acoustic) also has little
+    # up there. Only a localized wall at a plausible source Nyquist counts. This
+    # is what stops us condemning honest dark recordings as fakes.
+    def band_median_db(f_lo: float, f_hi: float) -> float:
+        m = (freqs >= f_lo) & (freqs < f_hi)
+        return float(np.median(mag_db[m])) if np.any(m) else -240.0
+
+    ref_level = band_median_db(2000, 8000)   # a band that reliably has content
+    nyquist = sr / 2
+    best_edge = None  # (source_rate_hz, empty_db, content_below_db)
+    for f_nyq in (11025, 22050, 24000, 44100, 48000):
+        if f_nyq >= nyquist - 1000:
+            continue
+        below = band_median_db(f_nyq * 0.85, f_nyq * 0.98)
+        above = band_median_db(f_nyq * 1.05, min(f_nyq * 1.6, nyquist - 200))
+        empty_db = below - above
+        content_below_db = below - ref_level
+        # A real upsample wall: a big empty band above AND genuine content below.
+        if empty_db > 30.0 and content_below_db > -35.0:
+            if best_edge is None or empty_db > best_edge[1]:
+                best_edge = (f_nyq * 2, empty_db, content_below_db)
+
     strength = "none"
-    src_hint = _guess_source_rate(sr)
-
-    if has_brickwall_at_cd:
-        # Strong evidence: brickwall at CD Nyquist + low HF energy
-        if hf_ratio < 0.005:  # < 0.5% energy above 22.05 kHz
-            strength = "strong"
-            # Brickwall at CD Nyquist strongly implies 44100 Hz source
-            src_hint = 44100
-    elif hf_ratio < 0.0001:  # < 0.01% — extremely low, almost certainly upsampled
-        if abs(slope) > 2.0 or slope > -0.5:
-            # Very flat interpolation noise (slope near 0 or very negative)
-            strength = "strong"
-        elif -2.0 < slope < -0.5:
-            # Grey zone: possible natural decay, downgrade to weak
-            strength = "weak"
-    elif hf_ratio < 0.001 and slope < -3.0:
-        # Low energy + rapid decay in ultrasonic band
-        strength = "strong"
-
-    if strength == "none":
-        src_hint = None
+    src_hint = None
+    if best_edge is not None:
+        src_hint, empty_db, _ = best_edge
+        # A very large, clean wall is strong evidence; a moderate one is only
+        # suspicious (downgraded so the caller reports "suspicious", not "fake").
+        strength = "strong" if empty_db > 50.0 else "weak"
 
     return UpsamplingResult(
         is_suspected=strength != "none",
@@ -573,24 +558,6 @@ def _detect_upsampling(
     )
 
 
-def _guess_source_rate(sr: int) -> int | None:
-    """Guess the most likely source sample rate for an upsampled file.
-
-    Considers both 44100 and 48000 base rates.
-    """
-    if sr == 176400 or sr == 88200:
-        return 44100
-    elif sr == 192000 or sr == 96000:
-        # 96kHz could be from 48kHz or 44.1kHz — prefer 44100 as it's
-        # the more common CD-derived upsample source
-        return 44100 if sr % 44100 == 0 else 48000
-    else:
-        for candidate in (44100, 48000):
-            if sr % candidate == 0:
-                return candidate
-    return 48000
-
-
 # ---------------------------------------------------------------------------
 # 3. Fake 24-bit detection (enhanced)
 # ---------------------------------------------------------------------------
@@ -598,13 +565,20 @@ def _guess_source_rate(sr: int) -> int | None:
 def _detect_fake_24bit(
     samples: np.ndarray, bit_depth: int
 ) -> tuple[bool, float]:
-    """Enhanced fake 24-bit detection using quantization histogram analysis.
+    """Detect 16-bit content disguised in a 24-bit container.
 
-    Beyond the simple LSB check in quality.py, this examines:
-      - The distribution of sample values modulo the 16-bit LSB.
-      - If all samples align perfectly to a 16-bit grid, it's fake.
-      - Uses statistical threshold to handle dithering, which adds noise to
-        mask the quantization, but still shows as a non-uniform LSB distribution.
+    A genuine 24-bit signal uses its low bits: the lowest 8 bits of each sample
+    carry real information and spread across most of 0-255. A 16-bit signal
+    padded into 24 bits leaves those low bits empty / highly structured.
+
+    We rely on LEVEL-INDEPENDENT features so the verdict doesn't flip with signal
+    loudness (the old residual-ratio threshold had a zero-tolerance boundary at
+    0.60 that misfired on genuine content):
+      * Grid alignment — fraction of samples landing exactly on a 16-bit grid.
+        We test BOTH common normalizations (divide by 32768 and by 32767) so a
+        full-scale-style encoder can't evade detection with a one-ULP grid shift.
+      * Low-8-bit entropy — how many distinct values the lowest 8 bits take.
+      * Exact-zero residual — kept only at a near-exact tier (unambiguous padding).
 
     Returns:
         (low_bits_active, confidence_fake)
@@ -612,74 +586,62 @@ def _detect_fake_24bit(
     if bit_depth != 24:
         return True, 0.0
 
-    lsb_16 = 1.0 / (2 ** 15)   # 16-bit LSB in [-1,1] float domain
-    lsb_24 = 1.0 / (2 ** 23)   # 24-bit LSB
+    lsb_24 = 1.0 / (2 ** 23)   # 24-bit LSB in the [-1, 1] float domain
+    # Candidate 16-bit grid spacings: the standard power-of-two normalization
+    # (/ 32768) and the full-scale variant (/ 32767) some encoders use.
+    grid_steps = (1.0 / 32768, 1.0 / 32767)
 
-    # Flatten all channels
     flat = samples.flatten()
-
     if len(flat) < 1000:
         return True, 0.0
-
-    # Method 1: 16-bit quantization residual (from quality.py, replicated for clarity)
-    quantized_16 = np.round(flat / lsb_16) * lsb_16
-    residual = flat - quantized_16
-    residual_power = float(np.mean(residual ** 2))
-    signal_power = float(np.mean(flat ** 2))
-
-    if signal_power == 0:
+    if float(np.mean(flat ** 2)) == 0:
         return True, 0.0
 
-    residual_ratio = residual_power / signal_power
-
-    # Method 2: Check the distribution of sample values modulo the 16-bit grid
-    # Sub-sample 100k points for performance
+    # Sub-sample for performance (fixed seed -> deterministic verdicts).
     n_check = min(len(flat), 100_000)
-    indices = np.random.default_rng(42).choice(len(flat), n_check, replace=False)
-    subset = flat[indices]
+    idx = np.random.default_rng(42).choice(len(flat), n_check, replace=False)
+    subset = flat[idx]
 
-    # What proportion of samples land on a 16-bit grid point?
-    dist_to_16bit = np.abs(subset - np.round(subset / lsb_16) * lsb_16)
-    on_16bit_grid = np.sum(dist_to_16bit < lsb_24 * 0.5)
-    grid_ratio = float(on_16bit_grid) / n_check
+    # Feature 1: grid alignment (best over candidate 16-bit grids).
+    tol = lsb_24 * 0.5
+    grid_ratio = 0.0
+    for g in grid_steps:
+        dist = np.abs(subset - np.round(subset / g) * g)
+        grid_ratio = max(grid_ratio, float(np.mean(dist < tol)))
 
-    # Method 3: Standard deviation of the LSB-8 bits
-    # If 24-bit is real, the low 8 bits should have reasonable entropy
-    # Map to 24-bit integer domain
+    # Feature 2: low-8-bit entropy of the 24-bit integer representation.
     int_24 = np.round(subset / lsb_24).astype(np.int64)
-    low_8 = int_24 & 0xFF  # lowest 8 bits
-    # Count unique values in low 8 bits
-    unique_low8 = len(np.unique(low_8))
+    unique_low8 = len(np.unique(int_24 & 0xFF))
 
-    # Combine methods into confidence
+    # Feature 3: exact-zero residual to a 16-bit grid (truly padded). Only the
+    # near-exact tier is used — looser residual thresholds are level-dependent
+    # and were a source of false positives on genuine 24-bit content.
+    sig_power = max(float(np.mean(subset ** 2)), 1e-30)
+    residual_ratio = min(
+        float(np.mean((subset - np.round(subset / g) * g) ** 2)) for g in grid_steps
+    ) / sig_power
+
     conf = 0.0
-
-    # Criterion 1: near-zero residual
-    if residual_ratio < 1e-14:
-        conf = max(conf, 0.95)
-    elif residual_ratio < 1e-12:
-        conf = max(conf, 0.85)
-    elif residual_ratio < 1e-10:
-        conf = max(conf, 0.60)
-
-    # Criterion 2: grid alignment
+    # Grid alignment (primary, level-independent).
     if grid_ratio > 0.99:
-        conf = max(conf, 0.90)
+        conf = max(conf, 0.95)
     elif grid_ratio > 0.95:
-        conf = max(conf, 0.70)
-    elif grid_ratio > 0.80:
-        conf = max(conf, 0.40)
-
-    # Criterion 3: low-8-bit entropy (real 24-bit should use most of 256 values)
-    if unique_low8 < 16:
         conf = max(conf, 0.85)
-    elif unique_low8 < 64:
-        conf = max(conf, 0.50)
-    elif unique_low8 < 128:
-        conf = max(conf, 0.30)
+    elif grid_ratio > 0.85:
+        conf = max(conf, 0.72)
+    # Low-8-bit entropy (genuine 24-bit spreads across most of 0-255).
+    if unique_low8 < 8:
+        conf = max(conf, 0.90)
+    elif unique_low8 < 32:
+        conf = max(conf, 0.70)
+    elif unique_low8 < 96:
+        conf = max(conf, 0.45)
+    # Exact-zero residual (unambiguous padding).
+    if residual_ratio < 1e-13:
+        conf = max(conf, 0.90)
 
-    # Normalize and clamp
     conf = min(1.0, conf)
-
-    low_bits_active = conf < 0.60  # conservative: only flag if high confidence
+    # Flag fake only at high confidence, with a clear margin below the old 0.60
+    # boundary (and aligned with hires.FAKE_THRESHOLD = 0.70).
+    low_bits_active = conf < 0.70
     return low_bits_active, conf
