@@ -19,6 +19,7 @@ Verdict categories:
     fake_hires     声称 hi-res 但检出高置信度造假（上采样/有损转码/假位深）
     suspicious     声称 hi-res，检出造假迹象但证据不够强，建议人工复核
     not_hires      实为 CD 或更低规格（未虚标；若含有损迹象会额外说明）
+    undetermined   信号过弱（近乎静音），无有效内容可供分析
 """
 
 from __future__ import annotations
@@ -35,6 +36,10 @@ CD_BIT_DEPTH = 16
 # Verdict thresholds on per-issue confidence (0-1).
 FAKE_THRESHOLD = 0.70        # >= this  => definite fake
 SUSPICIOUS_THRESHOLD = 0.40  # >= this  => suspicious
+
+# Peak below which a file is treated as digital silence (≈ -120 dBFS). Such a
+# file carries no analyzable content, so we decline to call it genuine or fake.
+SILENCE_PEAK_THRESHOLD = 1e-6
 
 # Confidence assigned when the (strict) upsampling detector fires.
 UPSAMPLE_CONFIDENCE = 0.85
@@ -74,7 +79,7 @@ class HiResReport:
     hires_target: str            # e.g. "24-bit / 96 kHz"
 
     # The verdict
-    verdict: str                 # genuine_hires | fake_hires | suspicious | not_hires
+    verdict: str                 # genuine_hires | fake_hires | suspicious | not_hires | undetermined
     verdict_label: str           # 真 Hi-Res / 假 Hi-Res / 可疑 / 非 Hi-Res
     verdict_color: str           # green / red / yellow / dim
     summary: str                 # one-line honest conclusion
@@ -250,6 +255,26 @@ def verify_hires(audio: AudioData, auth: AuthenticityReport | None = None) -> Hi
     bits = audio.bit_depth
     is_claim = claims_hires(sr, bits)
 
+    # Validity gate: digital silence / near-silence carries no analyzable content.
+    # The honest answer is "undetermined", not "genuine" — absence of a fake
+    # signature is meaningless when there is no signal to inspect.
+    peak = float(abs(audio.samples).max()) if audio.samples.size else 0.0
+    if peak < SILENCE_PEAK_THRESHOLD:
+        return HiResReport(
+            claimed_sample_rate=sr,
+            claimed_bit_depth=bits,
+            claims_hires=is_claim,
+            hires_target=_format_target(sr, bits),
+            verdict="undetermined",
+            verdict_label="无法判定",
+            verdict_color="dim",
+            summary="信号过弱（近乎静音），无有效内容可供真伪分析",
+            confidence=0.0,
+            issues=[],
+            evidence_quality="weak",
+            detection_scope=DETECTION_SCOPE,
+        )
+
     issues = build_issues(auth)
     verdict, label, color, summary, confidence = derive_verdict(is_claim, issues)
 
@@ -258,7 +283,10 @@ def verify_hires(audio: AudioData, auth: AuthenticityReport | None = None) -> Hi
     evidence_quality = "weak"
     if verdict == "genuine_hires":
         positive = _positive_evidence(auth)
-        confidence = round(min(0.95, 0.7 + 0.25 * positive), 3)
+        # Cap below certainty: "genuine" means "no fake signature detected", not
+        # a provenance certification (lossless upsampling is undetectable). Keep
+        # mild differentiation by positive evidence, never claim high certainty.
+        confidence = round(min(0.80, 0.6 + 0.2 * positive), 3)
         evidence_quality = "strong" if positive >= 0.5 else "weak"
         if evidence_quality == "strong":
             summary = "通过检测：未发现造假迹象，且存在真实高频内容与动态特征"

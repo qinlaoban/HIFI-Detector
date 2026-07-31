@@ -1,6 +1,6 @@
 <script>
   import { t } from '../lib/i18n.svelte.js';
-  import { BadgeCheck, BadgeX, CircleHelp, Minus } from 'lucide-svelte';
+  import { BadgeCheck, BadgeX, CircleHelp, Minus, VolumeX } from 'lucide-svelte';
 
   let { data } = $props();
   const h = $derived(data.hires);
@@ -10,12 +10,14 @@
     fake_hires: BadgeX,
     suspicious: CircleHelp,
     not_hires: Minus,
+    undetermined: VolumeX,
   });
   const label = $derived({
     genuine_hires: t('hiresGenuine'),
     fake_hires: t('hiresFake'),
     suspicious: t('hiresSuspicious'),
     not_hires: t('hiresNot'),
+    undetermined: t('hiresUndetermined'),
   });
 </script>
 

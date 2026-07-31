@@ -25,6 +25,7 @@
     fake_hires: t('hiresShortFake'),
     suspicious: t('hiresShortSuspicious'),
     not_hires: t('hiresShortNot'),
+    undetermined: t('hiresShortUndetermined'),
   };
 
   const counts = $derived(results.reduce((acc, r) => {

@@ -52,6 +52,21 @@ def _file_id(file_path: Path) -> str:
     return h
 
 
+def _sanitize(obj):
+    """Replace non-finite floats (inf / -inf / nan) with None for JSON compliance.
+
+    Silent or near-silent files produce -inf in some metrics (e.g. LUFS, RMS);
+    JSON cannot represent those, so map them to null before serializing.
+    """
+    if isinstance(obj, (float, np.floating)):
+        return None if not np.isfinite(obj) else float(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 def _build_verdict(quality, loudness, dr, authenticity) -> str:
     """Compute tiered verdict from analysis results."""
     clip = quality.clip_samples > 0
@@ -192,7 +207,7 @@ def analyze_audio(file: UploadFile = File(...)):
     if "error" in result:
         status = 413 if "too large" in result["error"] else 400
         raise HTTPException(status, result["error"])
-    return result
+    return _sanitize(result)
 
 
 @router.post("/analyze/batch")
@@ -206,7 +221,7 @@ def analyze_batch(files: List[UploadFile] = File(...)):
     results = []
     for f in files:
         results.append(_run_analysis(f))
-    return {"total": len(results), "results": results}
+    return _sanitize({"total": len(results), "results": results})
 
 
 @router.get("/spectrogram/{file_id}")

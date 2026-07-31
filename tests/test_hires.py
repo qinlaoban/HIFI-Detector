@@ -261,5 +261,38 @@ class TestFake24BitRobustness(unittest.TestCase):
         self.assertNotIn("fake_bitdepth", [i.kind for i in rep.issues])
 
 
+class TestSilenceGate(unittest.TestCase):
+    """P1-1: digital silence carries no analyzable content -> 'undetermined',
+    not a misleading 'genuine'."""
+
+    def test_digital_silence_is_undetermined(self):
+        rep = verify_hires(_audio(np.zeros(int(96000 * 2.0))))
+        self.assertEqual(rep.verdict, "undetermined")
+        self.assertEqual(rep.issues, [])
+        self.assertEqual(rep.confidence, 0.0)
+
+    def test_near_silence_is_undetermined(self):
+        # ~ -130 dBFS: effectively empty.
+        rep = verify_hires(_audio(np.full(int(96000 * 2.0), 1e-7)))
+        self.assertEqual(rep.verdict, "undetermined")
+
+    def test_quiet_but_real_is_analyzed(self):
+        # A genuinely quiet (-50 dBFS) signal must still be analyzed, not gated.
+        rng = np.random.default_rng(8)
+        rep = verify_hires(_audio(0.003 * rng.standard_normal(int(96000 * 2.0))))
+        self.assertNotEqual(rep.verdict, "undetermined")
+
+
+class TestGenuineConfidenceCapped(unittest.TestCase):
+    """P1-2: a 'genuine' verdict is 'no fake detected', not a certification —
+    its confidence must stay well below certainty."""
+
+    def test_genuine_confidence_capped(self):
+        rng = np.random.default_rng(9)
+        rep = verify_hires(_audio(0.3 * rng.standard_normal(int(96000 * 3.0))))
+        self.assertEqual(rep.verdict, "genuine_hires")
+        self.assertLessEqual(rep.confidence, 0.80)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
