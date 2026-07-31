@@ -16,6 +16,8 @@ from .core.quality import analyze_quality
 from .core.loudness import analyze_loudness
 from .core.dynamic_range import analyze_dynamic_range
 from .core.authenticity import analyze_authenticity
+from .core.library import scan_library
+from .core.hires import verify_hires
 
 app = typer.Typer(
     name="hifi-detect",
@@ -91,7 +93,7 @@ def analyze(
                 "dr_precise_avg_db": dr.dr_precise_avg_db,
                 "dr_precise_per_channel": dr.dr_precise_db,
                 "rating": dr.rating,
-                "top20_rms_per_channel_dbfs": dr.top20_rms_per_channel,
+                "peak_rms_per_channel_dbfs": dr.peak_rms_per_channel,
                 "overall_rms_per_channel_dbfs": dr.overall_rms_per_channel,
                 "boundary_risk": dr.boundary_risk,
             },
@@ -474,6 +476,260 @@ def web(
         threading.Thread(target=_open, daemon=True).start()
 
     run_server(host=host, port=port)
+
+
+_GRADE_STYLE = {
+    "A+": "bold green",
+    "A": "green",
+    "B": "yellow",
+    "C": "yellow",
+    "D": "red",
+    "E": "bold red",
+}
+
+
+def _album_table(albums, title: str, border: str) -> Table:
+    """Render a list of albums as a rich table."""
+    table = Table(title=title, border_style=border)
+    table.add_column("#", justify="right", style="dim", width=3)
+    table.add_column("专辑", style="bold", max_width=34, overflow="ellipsis")
+    table.add_column("等级", justify="center", width=6)
+    table.add_column("DR", justify="center", width=5)
+    table.add_column("LUFS", justify="right", width=7)
+    table.add_column("曲", justify="right", width=4)
+    table.add_column("结论", max_width=34, overflow="ellipsis")
+    for i, a in enumerate(albums, 1):
+        style = _GRADE_STYLE.get(a.grade, "white")
+        dr_range = f"{a.dr_median}" if a.dr_min == a.dr_max else f"{a.dr_min}-{a.dr_max}"
+        table.add_row(
+            str(i),
+            a.name,
+            f"[{style}]{a.grade}[/{style}]",
+            dr_range,
+            f"{a.lufs_median:.1f}",
+            str(a.n_tracks),
+            a.verdict,
+        )
+    return table
+
+
+@app.command()
+def scan(
+    directory: str = typer.Argument(..., help="Music library root directory"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r", help="Scan subdirectories"),
+    top: int = typer.Option(10, "--top", "-n", help="How many albums to show in each ranking"),
+    show_all: bool = typer.Option(False, "--all", "-a", help="List every album"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Save JSON report to file"),
+):
+    """Scan a music library: grade every album and report the loudness war."""
+    from dataclasses import asdict
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+
+    path = Path(directory)
+    if not path.is_dir():
+        console.print(f"[red]Not a directory:[/red] {directory}")
+        raise typer.Exit(1)
+
+    # Scan with a progress bar.
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as prog:
+        task_id = prog.add_task("Scanning", total=None)
+
+        def _progress(i: int, total: int, name: str):
+            prog.update(task_id, total=total, completed=i, description=f"[cyan]{name[:40]}")
+
+        report = scan_library(path, recursive=recursive, progress=_progress)
+
+    if report.n_albums == 0:
+        console.print("[yellow]No audio files found.[/yellow]")
+        return
+
+    # --- JSON output ---
+    if json_output or output:
+        payload = {
+            "root": report.root,
+            "n_files": report.n_files,
+            "n_errors": report.n_errors,
+            "n_albums": report.n_albums,
+            "avg_dr": report.avg_dr,
+            "pct_crushed": report.pct_crushed,
+            "grade_distribution": report.grade_distribution,
+            "albums": [asdict(a) for a in report.albums],
+        }
+        json_str = json.dumps(payload, indent=2, ensure_ascii=False)
+        if output:
+            Path(output).write_text(json_str)
+            console.print(f"[dim]Report saved to {output}[/dim]")
+        if json_output:
+            console.print(json_str)
+            return  # JSON on stdout: don't also emit the rich tables
+
+    # --- Rich report ---
+    # Overview panel
+    overview = Table.grid(padding=(0, 2))
+    overview.add_column(style="bold cyan")
+    overview.add_column()
+    overview.add_row("Library:", report.root)
+    overview.add_row("Files:", f"{report.n_files} tracks in {report.n_albums} albums"
+                     + (f" ({report.n_errors} errors)" if report.n_errors else ""))
+    overview.add_row("Average DR:", f"{report.avg_dr}")
+    crushed_style = "red" if report.pct_crushed > 30 else ("yellow" if report.pct_crushed > 0 else "green")
+    overview.add_row("Loudness war:",
+                     f"[{crushed_style}]{report.pct_crushed}% of albums look crushed (DR≤7)[/{crushed_style}]")
+
+    # Grade distribution
+    dist_parts = []
+    for g in ["A+", "A", "B", "C", "D", "E"]:
+        count = report.grade_distribution.get(g, 0)
+        if count:
+            style = _GRADE_STYLE.get(g, "white")
+            dist_parts.append(f"[{style}]{g}:{count}[/{style}]")
+    overview.add_row("Grades:", "  ".join(dist_parts) if dist_parts else "-")
+    console.print(Panel(overview, title="[bold]Library Report Card[/bold]", border_style="blue"))
+    console.print()
+
+    # Loudness war report (worst first)
+    worst = [a for a in report.albums if a.loudness_war][:top]
+    if worst:
+        console.print(_album_table(
+            worst,
+            f"🔥 Loudness War Report — {len(worst)} most crushed albums",
+            "red",
+        ))
+        console.print()
+
+    # Best dynamics
+    best = sorted(report.albums, key=lambda a: (-a.dr_median, a.lufs_median))[:top]
+    console.print(_album_table(best, f"✅ Best Dynamics — Top {len(best)}", "green"))
+    console.print()
+
+    if show_all:
+        console.print(_album_table(report.albums, "All Albums (worst → best)", "dim"))
+        console.print()
+
+
+_VERDICT_STYLE = {
+    "genuine_hires": "bold green",
+    "fake_hires": "bold red",
+    "suspicious": "bold yellow",
+    "not_hires": "dim",
+}
+
+
+def _print_hires_panel(path: str, rep) -> None:
+    """Render a focused hi-res verdict for one file."""
+    style = _VERDICT_STYLE.get(rep.verdict, "white")
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan")
+    grid.add_column()
+    grid.add_row("文件:", Path(path).name)
+    grid.add_row("声称规格:", rep.hires_target)
+    grid.add_row("判定:", f"[{style}]{rep.verdict_label}[/{style}]  (置信度 {rep.confidence:.2f})")
+    grid.add_row("结论:", rep.summary)
+    console.print(Panel(grid, title="[bold]Hi-Res 真假判定[/bold]", border_style=rep.verdict_color))
+
+    if rep.issues:
+        console.print("[bold]证据：[/bold]")
+        for issue in rep.issues:
+            console.print(f"  [red]●[/red] [bold]{issue.headline}[/bold] [dim](置信度 {issue.confidence:.2f})[/dim]")
+            console.print(f"    [dim]{issue.detail}[/dim]")
+        console.print()
+
+
+@app.command()
+def verify(
+    path: str = typer.Argument(..., help="Audio file or directory of 'hi-res' files"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r", help="Scan subdirectories"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+):
+    """Verify whether file(s) are genuine hi-res — the focused authenticity check."""
+    from dataclasses import asdict
+    from .core.library import iter_audio_files
+
+    target = Path(path)
+    if not target.exists():
+        console.print(f"[red]Path not found:[/red] {path}")
+        raise typer.Exit(1)
+
+    # Collect files (single file or directory).
+    if target.is_file():
+        files = [target]
+    else:
+        files = iter_audio_files(target, recursive=recursive)
+        if not files:
+            console.print("[yellow]No audio files found.[/yellow]")
+            return
+
+    reports = []
+    for f in files:
+        try:
+            audio = read_audio(f)
+            reports.append((f, verify_hires(audio)))
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[red]ERROR[/red] {f.name} — {e}")
+
+    if not reports:
+        return
+
+    # --- JSON output ---
+    if json_output:
+        payload = [
+            {"file": str(f), "hires": asdict(rep)} for f, rep in reports
+        ]
+        console.print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    # --- Single file: detailed panel ---
+    if len(reports) == 1:
+        f, rep = reports[0]
+        _print_hires_panel(str(f), rep)
+        return
+
+    # --- Directory: verdict table + summary ---
+    table = Table(title=f"Hi-Res Verification — {len(reports)} files", border_style="blue")
+    table.add_column("文件", style="bold", max_width=40, overflow="ellipsis")
+    table.add_column("声称规格", width=16)
+    table.add_column("判定", justify="center", width=12)
+    table.add_column("结论", max_width=44, overflow="ellipsis")
+
+    counts = {"genuine_hires": 0, "fake_hires": 0, "suspicious": 0, "not_hires": 0}
+    for f, rep in reports:
+        counts[rep.verdict] = counts.get(rep.verdict, 0) + 1
+        style = _VERDICT_STYLE.get(rep.verdict, "white")
+        table.add_row(
+            f.name,
+            rep.hires_target,
+            f"[{style}]{rep.verdict_label}[/{style}]",
+            rep.summary,
+        )
+    console.print(table)
+    console.print()
+
+    # Summary line — the "how many fakes" headline.
+    claimed = sum(1 for _, r in reports if r.claims_hires)
+    fake = counts["fake_hires"]
+    susp = counts["suspicious"]
+    fake_rate = (fake / claimed * 100) if claimed else 0.0
+    summary = Text()
+    summary.append(f"真 Hi-Res: ", style="bold")
+    summary.append(f"{counts['genuine_hires']}  ", style="green")
+    summary.append(f"假 Hi-Res: ", style="bold")
+    summary.append(f"{fake}  ", style="red")
+    summary.append(f"可疑: ", style="bold")
+    summary.append(f"{susp}  ", style="yellow")
+    summary.append(f"非 Hi-Res: ", style="bold")
+    summary.append(f"{counts['not_hires']}  ", style="dim")
+    if claimed:
+        summary.append(f"| 声称 hi-res 中假货率: {fake_rate:.0f}%", style="bold red" if fake_rate > 0 else "green")
+    console.print(Panel(summary, title="[bold]Summary[/bold]"))
 
 
 def main():

@@ -5,6 +5,7 @@ import tempfile
 import uuid
 import hashlib
 from collections import OrderedDict
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from ..core.quality import analyze_quality
 from ..core.loudness import analyze_loudness
 from ..core.dynamic_range import analyze_dynamic_range
 from ..core.authenticity import analyze_authenticity
+from ..core.hires import verify_hires
 
 router = APIRouter(prefix="/api")
 
@@ -107,6 +109,7 @@ def _run_analysis(file: UploadFile) -> dict:
         loudness = analyze_loudness(audio)
         dr = analyze_dynamic_range(audio)
         authenticity = analyze_authenticity(audio)
+        hires = verify_hires(audio, authenticity)
     except Exception as e:
         return {"filename": filename, "error": f"Analysis failed: {e}"}
 
@@ -116,6 +119,7 @@ def _run_analysis(file: UploadFile) -> dict:
         "file_id": fid,
         "filename": filename,
         "verdict": verdict,
+        "hires": asdict(hires),
         "metadata": {
             "format": meta.format,
             "subtype": meta.subtype,
@@ -164,8 +168,12 @@ def _run_analysis(file: UploadFile) -> dict:
             "has_sharp_cutoff": authenticity.has_sharp_cutoff,
             "cutoff_confidence": authenticity.cutoff_confidence,
             "is_suspected_upsampled": authenticity.is_suspected_upsampled,
+            "upsample_strength": authenticity.upsample_strength,
             "hf_energy_ratio": authenticity.hf_energy_ratio,
             "hf_energy_db": authenticity.hf_energy_db,
+            "ultrasonic_slope": authenticity.ultrasonic_slope,
+            "hf_frame_consistency": authenticity.hf_frame_consistency,
+            "natural_ultrasonic": authenticity.natural_ultrasonic,
             "upsample_source_rate_hint": authenticity.upsample_source_rate_hint,
             "low_bits_active": authenticity.low_bits_active,
             "fake_24bit_confidence": authenticity.fake_24bit_confidence,

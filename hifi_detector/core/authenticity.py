@@ -45,6 +45,25 @@ CD_NYQUIST = 22050
 
 
 @dataclass
+class UpsamplingResult:
+    """Structured result of the upsampling detector.
+
+    ``strength`` separates strong evidence (brickwall at CD Nyquist, or
+    extremely flat interpolation noise) from weak evidence (ultrasonic band
+    suspicious but ambiguous), so the caller can downgrade weak hits to a
+    "suspicious" verdict instead of an outright "fake".
+    """
+
+    is_suspected: bool = False
+    strength: str = "none"                # "none" | "weak" | "strong"
+    hf_energy_ratio: float = 0.0
+    hf_energy_db: float = -999.0          # max dBFS above 22.05 kHz (absolute)
+    ultrasonic_slope: float = 0.0
+    hf_frame_consistency: float = 1.0     # 1 = identical across frames
+    source_rate_hint: int | None = None
+
+
+@dataclass
 class AuthenticityReport:
     """Authenticity analysis results."""
 
@@ -56,8 +75,12 @@ class AuthenticityReport:
 
     # --- Upsampling detection ---
     is_suspected_upsampled: bool
+    upsample_strength: str                # "none" | "weak" | "strong"（判据强度）
     hf_energy_ratio: float                # ratio of energy above 22.05 kHz to total
-    hf_energy_db: float                   # energy above 22.05 kHz in dB relative to max
+    hf_energy_db: float                   # max dBFS above 22.05 kHz (absolute)
+    ultrasonic_slope: float               # log-log slope of the ultrasonic band (natural decay < 0)
+    hf_frame_consistency: float           # 0-1, higher = HF energy identical across frames
+    natural_ultrasonic: bool              # positive evidence: real ultrasonic content/dynamics
     upsample_source_rate_hint: int | None # hinted original sample rate (e.g. 44100)
 
     # --- Bit depth authenticity ---
@@ -93,7 +116,7 @@ def analyze_authenticity(audio: AudioData) -> AuthenticityReport:
     )
 
     # --- 2. Upsampling detection ---
-    is_up, hf_ratio, hf_db, src_hint = _detect_upsampling(samples, sr)
+    up = _detect_upsampling(samples, sr)
 
     # --- 3. Fake 24-bit detection ---
     low_bits_ok, fake_24_conf = _detect_fake_24bit(samples, audio.bit_depth)
@@ -107,18 +130,26 @@ def analyze_authenticity(audio: AudioData) -> AuthenticityReport:
                        f"suspected {cutoff_codec or 'lossy codec'}")
         confidence = max(confidence, cutoff_conf * 0.6)
 
-    if is_up:
+    if up.is_suspected:
         reasons.append(
             f"High sample rate ({sr} Hz) but no content above {CD_NYQUIST / 1000:.0f} kHz, "
-            f"likely upsampled from {src_hint} Hz"
+            f"likely upsampled from {up.source_rate_hint} Hz"
         )
-        confidence = max(confidence, 0.85)
+        confidence = max(confidence, 0.85 if up.strength == "strong" else 0.6)
 
     if not low_bits_ok:
         reasons.append(f"24-bit file appears to be padded from 16-bit")
         confidence = max(confidence, fake_24_conf * 0.5)
 
     is_suspicious = len(reasons) > 0
+
+    # Positive evidence: the file actually contains real ultrasonic content
+    # or dynamic ultrasonic noise (hallmark of a genuine hi-res recording),
+    # not the flat interpolation residue of an upsampled file.
+    natural_ultrasonic = bool(
+        (up.hf_energy_db > -90 and up.hf_energy_ratio >= 0.001)
+        or (up.hf_energy_db > -100 and up.hf_frame_consistency < 0.6)
+    )
 
     # Three-tier verdict for the frontend
     if not is_suspicious:
@@ -133,10 +164,14 @@ def analyze_authenticity(audio: AudioData) -> AuthenticityReport:
         cutoff_suspected_codec=cutoff_codec,
         has_sharp_cutoff=has_sharp,
         cutoff_confidence=round(cutoff_conf, 3),
-        is_suspected_upsampled=is_up,
-        hf_energy_ratio=round(hf_ratio, 6),
-        hf_energy_db=round(hf_db, 1),
-        upsample_source_rate_hint=src_hint,
+        is_suspected_upsampled=up.is_suspected,
+        upsample_strength=up.strength,
+        hf_energy_ratio=round(up.hf_energy_ratio, 6),
+        hf_energy_db=round(up.hf_energy_db, 1),
+        ultrasonic_slope=round(up.ultrasonic_slope, 3),
+        hf_frame_consistency=round(up.hf_frame_consistency, 3),
+        natural_ultrasonic=natural_ultrasonic,
+        upsample_source_rate_hint=up.source_rate_hint,
         low_bits_active=low_bits_ok,
         fake_24bit_confidence=round(fake_24_conf, 3),
         is_suspicious=is_suspicious,
@@ -377,7 +412,7 @@ def _cutoff_confidence(
 
 def _detect_upsampling(
     samples: np.ndarray, sr: int
-) -> tuple[bool, float, float, int | None]:
+) -> UpsamplingResult:
     """Detect if a high-sample-rate file is upsampled from a lower rate.
 
     Key heuristics (revised to reduce false positives per audiocheckr findings):
@@ -387,13 +422,14 @@ def _detect_upsampling(
         ultrasonic content. Require corroborating evidence:
           (a) A sharp brickwall cutoff near 22.05 kHz (CD Nyquist), OR
           (b) Extremely low energy (< 0.01%) combined with flat interpolation noise
-      - Source rate hint considers both 44100 and 48000.
+      - Ambiguous cases are downgraded to ``strength="weak"`` so the caller
+        reports them as "suspicious" rather than "fake".
 
     Returns:
-        (is_suspected, hf_energy_ratio, hf_energy_db, source_rate_hint)
+        UpsamplingResult with detection flag, strength and diagnostic features.
     """
     if sr <= 48000:
-        return False, 0.0, -999.0, None
+        return UpsamplingResult()
 
     # --- Multi-frame FFT for robust spectral estimate ---
     n_total = samples.shape[1]
@@ -412,6 +448,7 @@ def _detect_upsampling(
 
     all_mag_db = []
     freqs = rfftfreq(frame_len, 1 / sr)
+    hf_mask = freqs > CD_NYQUIST
     for pos in frame_positions:
         frame = samples[0, pos: pos + frame_len]
         if len(frame) < frame_len:
@@ -421,45 +458,73 @@ def _detect_upsampling(
         all_mag_db.append(mag_db)
 
     if not all_mag_db:
-        return False, 0.0, -999.0, None
+        return UpsamplingResult()
+    if not np.any(hf_mask):
+        return UpsamplingResult()
+
+    # Per-frame HF energy ratio (for frame-to-frame consistency).
+    per_frame_ratio = []
+    for mag_db in all_mag_db:
+        mag_lin = 10 ** (mag_db / 20)
+        total = float(np.sum(mag_lin ** 2))
+        hf = float(np.sum(mag_lin[hf_mask] ** 2))
+        per_frame_ratio.append(hf / total if total > 0 else 0.0)
+    per_frame_ratio = np.asarray(per_frame_ratio)
 
     # Median magnitude across frames
     mag_db = np.median(np.array(all_mag_db), axis=0)
 
     # Energy above CD Nyquist (22.05 kHz)
-    hf_mask = freqs > CD_NYQUIST
-    if not np.any(hf_mask):
-        return False, 0.0, -999.0, None
-
-    # Total energy (sum of squared magnitudes, proportional to signal power)
     mag_linear = 10 ** (mag_db / 20)
     total_energy = float(np.sum(mag_linear ** 2))
     hf_energy = float(np.sum(mag_linear[hf_mask] ** 2))
     hf_ratio = hf_energy / total_energy if total_energy > 0 else 0.0
 
-    # Max dB in HF region
+    # Max dB in HF region (absolute dBFS)
     max_hf_db = float(np.max(mag_db[hf_mask])) if hf_energy > 0 else -999.0
 
+    # Frame-to-frame consistency of HF energy.
+    # 1.0 = identical across frames (an upsampled file); low = dynamic (real signal).
+    if len(per_frame_ratio) > 1 and per_frame_ratio.max() > 0:
+        rng = per_frame_ratio.max() - per_frame_ratio.min()
+        mean = per_frame_ratio.mean()
+        frame_consistency = 1.0 - rng / (mean + rng + 1e-12)
+    else:
+        frame_consistency = 1.0
+
     # --- Check for brickwall cutoff near CD Nyquist ---
-    # This is the hallmark of a CD-sourced file upsampled to hi-res
-    # Look for a sharp drop (>100 dB/kHz) in the 20-24 kHz region
+    # This is the hallmark of a CD-sourced file upsampled to hi-res.
+    # Require BOTH:
+    #   (a) a sharp drop (>100 dB/kHz) in a narrow band around 22.05 kHz, AND
+    #   (b) a sustained level drop (median) from the pre-wall band (19-21.5 kHz)
+    #       to the post-wall band (22.2-24 kHz).
+    # The level-drop test rejects false positives from flat quantization noise,
+    # whose local spikes can look steep but have no real band-level change.
     has_brickwall_at_cd = False
-    lo_idx = int(20000 * frame_len / sr)
-    hi_idx = min(int(24000 * frame_len / sr), len(mag_db))
-    if hi_idx - lo_idx > 5:
-        band_db = mag_db[lo_idx:hi_idx]
-        # Smooth lightly
-        win = min(5, len(band_db) - 2)
-        if win >= 3 and win % 2 == 0:
-            win -= 1
-        if win >= 3:
-            smooth = signal.savgol_filter(band_db, win, 2)
-            freq_bin_hz = float(sr / frame_len)
-            gradient = np.diff(smooth) / (freq_bin_hz / 1000.0)
-            if len(gradient) > 0:
-                steepest = abs(float(np.min(gradient)))
-                if steepest > 100:  # sharp brickwall near CD Nyquist
-                    has_brickwall_at_cd = True
+    pre_lo = int(19000 * frame_len / sr)
+    pre_hi = int(21500 * frame_len / sr)
+    post_lo = int(22200 * frame_len / sr)
+    post_hi = min(int(24000 * frame_len / sr), len(mag_db))
+    if pre_hi > pre_lo and post_hi > post_lo + 5:
+        pre_level = float(np.median(mag_db[pre_lo:pre_hi]))
+        post_level = float(np.median(mag_db[post_lo:post_hi]))
+        level_drop = pre_level - post_level
+
+        wall_lo = int(21600 * frame_len / sr)
+        wall_hi = min(int(22400 * frame_len / sr), len(mag_db))
+        if wall_hi - wall_lo > 5 and level_drop > 30.0:
+            band_db = mag_db[wall_lo:wall_hi]
+            win = min(5, len(band_db) - 2)
+            if win >= 3 and win % 2 == 0:
+                win -= 1
+            if win >= 3:
+                smooth = signal.savgol_filter(band_db, win, 2)
+                freq_bin_hz = float(sr / frame_len)
+                gradient = np.diff(smooth) / (freq_bin_hz / 1000.0)
+                if len(gradient) > 0:
+                    steepest = abs(float(np.min(gradient)))
+                    if steepest > 100:  # sharp brickwall near CD Nyquist
+                        has_brickwall_at_cd = True
 
     # --- Noise floor slope in ultrasonic band ---
     hf_indices = np.where(hf_mask)[0]
@@ -474,27 +539,38 @@ def _detect_upsampling(
             slope, _ = np.polyfit(x, y, 1)
 
     # --- Combine heuristics (more conservative to reduce false positives) ---
-    is_up = False
+    strength = "none"
     src_hint = _guess_source_rate(sr)
 
     if has_brickwall_at_cd:
         # Strong evidence: brickwall at CD Nyquist + low HF energy
         if hf_ratio < 0.005:  # < 0.5% energy above 22.05 kHz
-            is_up = True
+            strength = "strong"
             # Brickwall at CD Nyquist strongly implies 44100 Hz source
             src_hint = 44100
     elif hf_ratio < 0.0001:  # < 0.01% — extremely low, almost certainly upsampled
-        # Require very flat interpolation noise (slope near 0 or very negative)
         if abs(slope) > 2.0 or slope > -0.5:
-            is_up = True
+            # Very flat interpolation noise (slope near 0 or very negative)
+            strength = "strong"
+        elif -2.0 < slope < -0.5:
+            # Grey zone: possible natural decay, downgrade to weak
+            strength = "weak"
     elif hf_ratio < 0.001 and slope < -3.0:
         # Low energy + rapid decay in ultrasonic band
-        is_up = True
+        strength = "strong"
 
-    if not is_up:
+    if strength == "none":
         src_hint = None
 
-    return is_up, hf_ratio, max_hf_db, src_hint
+    return UpsamplingResult(
+        is_suspected=strength != "none",
+        strength=strength,
+        hf_energy_ratio=hf_ratio,
+        hf_energy_db=max_hf_db,
+        ultrasonic_slope=slope,
+        hf_frame_consistency=frame_consistency,
+        source_rate_hint=src_hint,
+    )
 
 
 def _guess_source_rate(sr: int) -> int | None:

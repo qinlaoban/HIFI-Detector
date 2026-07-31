@@ -50,20 +50,16 @@ def analyze_loudness(audio: AudioData) -> LoudnessReport:
     if audio.channels >= 2:
         tp_r = _true_peak(samples[1], sample_rate)
 
-    # --- K-weight filter (compute once, share) ---
-    n_channels = samples.shape[0]
-    if n_channels == 1:
-        mono = samples[0]
-    else:
-        # BS.1770: downmix stereo to mono by averaging (not summing)
-        mono = (samples[0] + samples[1]) / 2.0
-    mono_kweighted = _k_weight_filter(mono, sample_rate)
+    # --- K-weight filter is applied per channel inside the loudness helpers ---
+    # BS.1770-4: K-weight EACH channel, then SUM the per-channel mean-square
+    # powers (z_L + z_R for stereo). Do NOT downmix to mono first — that
+    # underestimates loudness by 3-6 dB (see _channel_summed_powers).
 
     # --- Integrated LUFS ---
-    il = _integrated_lufs(mono_kweighted, sample_rate)
+    il = _integrated_lufs(samples, sample_rate)
 
     # --- Loudness Range ---
-    lra = _loudness_range(mono_kweighted, sample_rate)
+    lra = _loudness_range(samples, sample_rate)
 
     return LoudnessReport(
         rms_db_l=round(float(rms_l), 2),
@@ -78,10 +74,15 @@ def analyze_loudness(audio: AudioData) -> LoudnessReport:
 def _true_peak(channel: np.ndarray, sample_rate: int) -> float:
     """Calculate True Peak using 4x oversampling (ITU-R BS.1770).
 
-    Uses a 12th-order polyphase lowpass filter.
+    Uses scipy's polyphase resampler with a long Kaiser-windowed FIR
+    anti-imaging filter. This closely approximates the ITU-R BS.1770
+    oversampling peak detector; note it is not the exact ITU-specified
+    48-tap coefficient set, so dBTP may differ from a strict reference
+    meter by a small amount (typically < 0.1 dB) near full scale.
     """
-    # 4x upsampling using scipy's polyphase resampling
-    upsampled = resample_poly(channel, 4, 1, padtype="line")
+    # 4x upsampling; zero-pad the edges (signal is treated as zero outside,
+    # matching the ITU oversampling model).
+    upsampled = resample_poly(channel, 4, 1, padtype="constant")
 
     # Find the absolute peak
     peak = np.max(np.abs(upsampled))
@@ -92,27 +93,48 @@ def _true_peak(channel: np.ndarray, sample_rate: int) -> float:
     return float(20 * np.log10(peak))
 
 
-def _integrated_lufs(mono_kweighted: np.ndarray, sample_rate: int) -> float:
-    """Calculate Integrated LUFS using ITU-R BS.1770 K-weighting.
+def _channel_summed_powers(
+    samples: np.ndarray, sample_rate: int, block_s: float, step_s: float
+) -> np.ndarray | None:
+    """Per-block loudness power = sum of K-weighted mean-square per channel.
 
-    Uses 400ms blocks with 75% overlap (step = 100ms) per BS.1770-4.
-    Two-pass gating: absolute (-70 LUFS) then relative (-10 LU).
+    Implements the BS.1770-4 channel summation: each channel is K-weighted
+    independently, its mean-square over each block is computed, and the
+    channel powers are summed (weight 1.0 each for mono/stereo). For >2
+    channels all are summed with weight 1.0 (surround weighting 1.41 is not
+    applied — music files are mono/stereo in practice).
+
+    Returns an array of per-block summed powers, or None if too short.
     """
-    block_size = int(0.4 * sample_rate)
-    step_size = int(0.1 * sample_rate)  # 75% overlap
+    block_size = int(block_s * sample_rate)
+    step_size = int(step_s * sample_rate)
     if block_size < 1 or step_size < 1:
-        return -120.0
+        return None
+    if samples.shape[1] < block_size:
+        return None
 
-    n_samples = len(mono_kweighted)
-    if n_samples < block_size:
-        return -120.0
-
-    # Compute mean power for each overlapping block (vectorized via stride tricks)
-    n_blocks = (n_samples - block_size) // step_size + 1
-    # Use sliding window view for efficiency
     from numpy.lib.stride_tricks import sliding_window_view
-    windows = sliding_window_view(mono_kweighted, block_size)[::step_size]
-    powers = np.mean(windows ** 2, axis=1)
+
+    total: np.ndarray | None = None
+    for ch in range(samples.shape[0]):
+        kweighted = _k_weight_filter(samples[ch], sample_rate)
+        windows = sliding_window_view(kweighted, block_size)[::step_size]
+        powers = np.mean(windows ** 2, axis=1)
+        total = powers if total is None else total + powers
+    return total
+
+
+def _integrated_lufs(samples: np.ndarray, sample_rate: int) -> float:
+    """Calculate Integrated LUFS per ITU-R BS.1770-4.
+
+    400 ms blocks with 75% overlap (step = 100 ms). Two-pass gating:
+    absolute gate at -70 LUFS, then relative gate at -10 LU below the
+    absolute-gated mean. Channel powers are summed per BS.1770-4 (see
+    _channel_summed_powers) rather than downmixed to mono.
+    """
+    powers = _channel_summed_powers(samples, sample_rate, 0.4, 0.1)
+    if powers is None or len(powers) == 0:
+        return -120.0
 
     if np.all(powers <= 0):
         return -120.0
@@ -142,34 +164,26 @@ def _integrated_lufs(mono_kweighted: np.ndarray, sample_rate: int) -> float:
     return float(lufs)
 
 
-def _loudness_range(mono_kweighted: np.ndarray, sample_rate: int) -> float:
+def _loudness_range(samples: np.ndarray, sample_rate: int) -> float:
     """Calculate Loudness Range (LRA) per EBU Tech 3342 / EBU R128.
 
     Algorithm (MathWorks reference implementation of EBU Tech 3342):
-      1. 3-second blocks with 2.9s overlap (step = 0.1s)
+      1. 3-second blocks, measured every 0.1 s (step = 0.1 s)
       2. Compute short-term loudness (LUFS) for each block
       3. Absolute gate: remove blocks < -70 LUFS
       4. Convert gated loudness back to linear power, take mean
       5. Relative gate: -20 LU below that mean (in linear)
       6. LRA = 95th percentile - 10th percentile of surviving blocks
+
+    Channel powers are summed per BS.1770-4 (see _channel_summed_powers).
     """
-    block_size = int(3.0 * sample_rate)
-    step_size = max(1, int(0.1 * sample_rate))  # 96.7% overlap per EBU Tech 3342
-    if block_size < 1 or step_size < 1:
+    powers = _channel_summed_powers(samples, sample_rate, 3.0, 0.1)
+    if powers is None:
         return 0.0
 
-    n_samples = len(mono_kweighted)
-    if n_samples < block_size:
-        return 0.0
-
-    n_blocks = (n_samples - block_size) // step_size + 1
+    n_blocks = len(powers)
     if n_blocks < 2:
         return 0.0
-
-    # Vectorized block power computation with overlapping windows
-    from numpy.lib.stride_tricks import sliding_window_view
-    windows = sliding_window_view(mono_kweighted, block_size)[::step_size]
-    powers = np.mean(windows ** 2, axis=1)
 
     # Short-term loudness in LUFS
     st_loudness = np.full(n_blocks, -120.0)
