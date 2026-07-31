@@ -2,9 +2,10 @@
 REM Build script for HIFI Detector desktop app (Windows)
 REM
 REM Steps:
-REM   1. Build Python server with PyInstaller
-REM   2. Copy to Tauri resources
-REM   3. Build Tauri desktop app
+REM   1. Build Svelte frontend
+REM   2. Build Python server with PyInstaller
+REM   3. Copy to Tauri resources
+REM   4. Build Tauri desktop app
 REM
 REM Usage:
 REM   build.bat              Full production build
@@ -38,9 +39,25 @@ if exist "%PROJECT_ROOT%\.venv\Scripts\python.exe" (
 :found_python
 echo Using Python: %PYTHON%
 
-REM Step 1: PyInstaller
+REM Step 1: Frontend (Svelte) -> hifi_detector\web\static
 echo.
-echo [1/3] Building Python server (PyInstaller)...
+echo [1/4] Building Svelte frontend...
+cd /d "%PROJECT_ROOT%\web"
+call npm ci
+if %errorlevel% neq 0 (
+    echo    ERROR: npm ci failed.
+    exit /b 1
+)
+call npm run build
+if %errorlevel% neq 0 (
+    echo    ERROR: frontend build failed.
+    exit /b 1
+)
+echo    OK: frontend built to hifi_detector\web\static
+
+REM Step 2: PyInstaller
+echo.
+echo [2/4] Building Python server (PyInstaller)...
 cd /d "%PROJECT_ROOT%"
 %PYTHON% -m PyInstaller ^
     --distpath "%PYINST_DIST%" ^
@@ -57,9 +74,9 @@ if exist "%BINARY%" (
     exit /b 1
 )
 
-REM Step 2: Copy to Tauri resources
+REM Step 3: Copy to Tauri resources
 echo.
-echo [2/3] Copying Python server to Tauri resources...
+echo [3/4] Copying Python server to Tauri resources...
 if not exist "%TAURI_RESOURCES%" mkdir "%TAURI_RESOURCES%"
 copy /Y "%BINARY%" "%TAURI_RESOURCES%\hifi-detect-server.exe" >nul
 if exist "%BINARY_DIR%\_internal" (
@@ -68,9 +85,9 @@ if exist "%BINARY_DIR%\_internal" (
 )
 echo    OK
 
-REM Step 3: Tauri build
+REM Step 4: Tauri build
 echo.
-echo [3/3] Building Tauri desktop app...
+echo [4/4] Building Tauri desktop app...
 cd /d "%SCRIPT_DIR%"
 call npx tauri build
 

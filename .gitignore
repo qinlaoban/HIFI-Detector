@@ -16,6 +16,9 @@ tauri/src-tauri/python/
 tauri/src-tauri/target/
 tauri/node_modules/
 
+# Node
+node_modules/
+
 # IDE
 .vscode/
 .idea/

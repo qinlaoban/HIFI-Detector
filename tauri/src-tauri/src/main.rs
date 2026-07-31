@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -60,40 +61,48 @@ fn find_python() -> (String, Vec<String>) {
         }
     }
 
-    // 2. PyInstaller output in dist-python (dev testing without venv)
-    //    macOS: ../dist-python/hifi-detect-server/hifi-detect-server
-    //    Windows: ..\dist-python\hifi-detect-server\hifi-detect-server.exe
-    #[cfg(target_os = "windows")]
-    let pyinst_dev = "../dist-python/hifi-detect-server/hifi-detect-server.exe";
-    #[cfg(not(target_os = "windows"))]
-    let pyinst_dev = "../dist-python/hifi-detect-server/hifi-detect-server";
-
-    if std::path::Path::new(pyinst_dev).exists() {
-        return (pyinst_dev.to_string(), vec![]);
+    // 2/3. Dev environment: try to locate the project root so relative paths
+    //     are cwd-independent (tauri dev may run from tauri/ or src-tauri/).
+    let mut project_roots: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        // exe at tauri/src-tauri/target/{debug,release}/<app> -> project root is 4 levels up
+        if let Some(dir) = exe.parent() {
+            if let Some(deep) = dir.ancestors().nth(3) {
+                project_roots.push(deep.to_path_buf());
+            }
+        }
     }
+    // Also try common relative layouts from the current working directory
+    project_roots.push(PathBuf::from("../../../")); // cwd = src-tauri
+    project_roots.push(PathBuf::from("../../")); // cwd = tauri
+    project_roots.push(PathBuf::from("../")); // cwd = project root
 
-    // 3. Project venv (dev)
-    //    macOS: .venv/bin/python
-    //    Windows: .venv\Scripts\python.exe
-    let venv_python = {
-        #[cfg(target_os = "windows")]
-        {
-            "../.venv/Scripts/python.exe"
+    #[cfg(target_os = "windows")]
+    let pyinst_rel = "dist-python/hifi-detect-server/hifi-detect-server.exe";
+    #[cfg(not(target_os = "windows"))]
+    let pyinst_rel = "dist-python/hifi-detect-server/hifi-detect-server";
+
+    #[cfg(target_os = "windows")]
+    let venv_rel = ".venv/Scripts/python.exe";
+    #[cfg(not(target_os = "windows"))]
+    let venv_rel = ".venv/bin/python";
+
+    for root in &project_roots {
+        let pyinst = root.join(pyinst_rel);
+        if pyinst.exists() {
+            return (pyinst.to_string_lossy().to_string(), vec![]);
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "../../.venv/bin/python"
+        let venv = root.join(venv_rel);
+        if venv.exists() {
+            return (
+                venv.to_string_lossy().to_string(),
+                vec![
+                    "-m".to_string(),
+                    "hifi_detector.cli".to_string(),
+                    "web".to_string(),
+                ],
+            );
         }
-    };
-    if std::path::Path::new(venv_python).exists() {
-        return (
-            venv_python.to_string(),
-            vec![
-                "-m".to_string(),
-                "hifi_detector.cli".to_string(),
-                "web".to_string(),
-            ],
-        );
     }
 
     // 4. System fallback

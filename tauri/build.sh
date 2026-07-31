@@ -2,9 +2,10 @@
 # Build script for HIFI Detector desktop app
 #
 # Steps:
-#   1. Build Python server with PyInstaller
-#   2. Copy to Tauri resources
-#   3. Build Tauri desktop app
+#   1. Build Svelte frontend
+#   2. Build Python server with PyInstaller
+#   3. Copy to Tauri resources
+#   4. Build Tauri desktop app
 #
 # Usage:
 #   ./build.sh          # Full production build
@@ -23,8 +24,16 @@ TAURI_RESOURCES="$SCRIPT_DIR/src-tauri/python"
 echo "=== HIFI Detector Desktop Build ==="
 echo ""
 
-# Step 1: PyInstaller
-echo "[1/3] Building Python server (PyInstaller)..."
+# Step 1: Frontend (Svelte) -> hifi_detector/web/static
+echo "[1/4] Building Svelte frontend..."
+cd "$PROJECT_ROOT/web"
+npm ci
+npm run build
+echo "   OK: frontend built to hifi_detector/web/static"
+
+# Step 2: PyInstaller
+echo ""
+echo "[2/4] Building Python server (PyInstaller)..."
 cd "$PROJECT_ROOT"
 $VENV_PYTHON -m PyInstaller \
     --distpath "$PYINST_DIST" \
@@ -40,18 +49,18 @@ else
     exit 1
 fi
 
-# Step 2: Copy to Tauri resources
+# Step 3: Copy to Tauri resources
 echo ""
-echo "[2/3] Copying Python server to Tauri resources..."
+echo "[3/4] Copying Python server to Tauri resources..."
 mkdir -p "$TAURI_RESOURCES"
 cp "$BINARY" "$TAURI_RESOURCES/hifi-detect-server"
 cp -r "$PYINST_DIST/hifi-detect-server/_internal" "$TAURI_RESOURCES/_internal"
 chmod +x "$TAURI_RESOURCES/hifi-detect-server"
 echo "   OK: $(du -sh "$TAURI_RESOURCES" | awk '{print $1}')"
 
-# Step 3: Tauri build
+# Step 4: Tauri build
 echo ""
-echo "[3/3] Building Tauri desktop app..."
+echo "[4/4] Building Tauri desktop app..."
 cd "$SCRIPT_DIR"
 npx tauri build 2>&1 | tail -20
 
