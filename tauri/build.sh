@@ -52,6 +52,7 @@ fi
 # Step 3: Copy to Tauri resources
 echo ""
 echo "[3/4] Copying Python server to Tauri resources..."
+rm -rf "$TAURI_RESOURCES"
 mkdir -p "$TAURI_RESOURCES"
 cp "$BINARY" "$TAURI_RESOURCES/hifi-detect-server"
 cp -r "$PYINST_DIST/hifi-detect-server/_internal" "$TAURI_RESOURCES/_internal"

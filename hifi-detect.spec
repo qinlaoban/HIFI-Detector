@@ -2,15 +2,22 @@
 
 
 a = Analysis(
-    ['hifi_detector/cli.py'],
+    ['web_entry.py'],
     pathex=[],
     binaries=[],
     datas=[('hifi_detector/web/static', 'hifi_detector/web/static')],
-    hiddenimports=['scipy.signal._spectral', 'scipy.signal._savitzky_golay', 'scipy.signal._sigtools', 'scipy.signal._peak_finding_utils', 'scipy.special._ufuncs_cxx', 'scipy.linalg._fblas', 'scipy.linalg._flapack', 'hifi_detector', 'hifi_detector.core', 'hifi_detector.core.audio_io', 'hifi_detector.core.metadata', 'hifi_detector.core.quality', 'hifi_detector.core.loudness', 'hifi_detector.core.dynamic_range', 'hifi_detector.core.authenticity', 'hifi_detector.web', 'hifi_detector.web.server', 'hifi_detector.web.routes', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto'],
+    hiddenimports=['scipy.signal._spectral', 'scipy.signal._savitzky_golay', 'scipy.signal._sigtools', 'scipy.signal._peak_finding_utils', 'scipy.special._ufuncs_cxx', 'scipy.linalg._fblas', 'scipy.linalg._flapack', 'numpy.f2py', 'hifi_detector', 'hifi_detector.core', 'hifi_detector.core.audio_io', 'hifi_detector.core.metadata', 'hifi_detector.core.quality', 'hifi_detector.core.loudness', 'hifi_detector.core.dynamic_range', 'hifi_detector.core.authenticity', 'hifi_detector.web', 'hifi_detector.web.server', 'hifi_detector.web.routes', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # 图像库：代码/soundfile/scipy 均不引用（省 ~18M，含图像 codec dylibs）
+        'PIL', 'PIL.Image', 'matplotlib',
+        # 未使用的第三方库（代码从不 import，防止被误打包）
+        'librosa', 'numba', 'llvmlite', 'sklearn', 'pyloudnorm',
+        # 开发/测试工具，运行时不需要
+        'tkinter', 'pytest', 'IPython', 'notebook', 'sphinx', 'setuptools',
+    ],
     noarchive=False,
     optimize=0,
 )
